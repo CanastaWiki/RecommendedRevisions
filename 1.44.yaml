@@ -244,7 +244,7 @@ extensions:
     commit: 611f277fb975ffc2a7e25e10fe01dba4aad45997
 - JWTAuth:
     Wikidata ID: Q123281437
-    commit: 2d52f1230fe0e547247c3f59cfe78eabaf6175dc
+    commit: 1649b7a2baeaf996caf2de463d6004807e26748d
     additional steps:
     - database update
     required extensions:
