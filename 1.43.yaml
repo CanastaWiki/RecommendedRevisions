@@ -249,7 +249,8 @@ extensions:
     bundled: true
 - JWTAuth:
     Wikidata ID: Q123281437
-    commit: 1649b7a2baeaf996caf2de463d6004807e26748d
+    branch: master
+    commit: 1649b7a2baeaf996caf2de463d6004807e26748d # v. 2.1.0
     additional steps:
     - database update
     required extensions:
