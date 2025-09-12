@@ -94,7 +94,7 @@ extensions:
 - CiteThisPage:
     Wikidata ID: Q21676453
     bundled: true
-- CLDR:
+- cldr:
     Wikidata ID: Q21676160
     commit: cf6c9c70150cec6c1193f6f50dc54b72dc6e0f40
 - CodeEditor:
