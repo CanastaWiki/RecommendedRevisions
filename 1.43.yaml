@@ -12,7 +12,7 @@ extensions:
 - AdminLinks:
     Wikidata ID: Q21676187
     branch: master
-    commit: 4a66a151e3e6bff64b26efbf4491833549b025e5 # v. 0.6.3
+    commit: 92f1e05e2458368ad7a8477b2d84acfc99c36026 # v. 0.7.1
 - AdvancedSearch:
     Wikidata ID: Q21676196
     commit: d879c5105bbdc574d6c7e95fa4cd20d7b6de6dcd
@@ -384,7 +384,7 @@ extensions:
 - PageForms:
     Wikidata ID: Q21678466
     branch: master
-    commit: 35099cf9fab298ceb5fbc51ed2c721eae2728406 # v. 6.0
+    commit: 6a1a2bc354bc89a9ed89e6ff9ab6dbbf16711785 # v. 6.0.2
 - PageImages:
     Wikidata ID: Q21677945
     bundled: true
