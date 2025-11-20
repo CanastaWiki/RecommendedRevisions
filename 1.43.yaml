@@ -623,7 +623,7 @@ extensions:
 - WatchAnalytics:
     Wikidata ID: Q21679202
     branch: master
-    commit: 0006628d32a15614968dc80e2edb40322ea33c76 # v. 4.5
+    commit: 574e93d94e334eeccbe3a71479637b227f8be18f # v. 4.5.1
     additional steps:
     - database update
 - WhoIsWatching:
