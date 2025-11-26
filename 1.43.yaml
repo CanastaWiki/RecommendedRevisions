@@ -54,7 +54,7 @@ extensions:
 - Bootstrap:
     Wikidata ID: Q21676802
     repository: https://github.com/ProfessionalWiki/Bootstrap
-    commit: 0d6e4460f98e7d0207281b615e4bebbee64c2e46 # v. 5.0.0
+    commit: 179bcff7bd3c4748003bdb2825f521826e18ca3e # v. 4.6.2
     additional steps:
     - composer update
 - BootstrapComponents:
