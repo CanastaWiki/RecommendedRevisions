@@ -593,7 +593,7 @@ extensions:
     commit: f9d2664fd1af70a2b3a22a55b971c174593d38f1
 - UserPageViewTracker:
     Wikidata ID: Q21679006
-    commit: a3009ef62873535de56e18f62d629ca3494e9d77
+    commit: e92d6c8fc3e491a451494b0d4a194b8ead60ad74
     additional steps:
     - database update
 - Variables:
