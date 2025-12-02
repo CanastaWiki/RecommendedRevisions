@@ -127,7 +127,8 @@ extensions:
     commit: 733c519feeafdf296b288500f317512262ffecb7
 - ContributionScores:
     Wikidata ID: Q21676708
-    commit: 6370730e6cec3ccff17d2ea988dd414fa87f1e16
+    branch: master
+    commit: 6f95b63a0bedfcfeb349d87b9943d873232c9bd2
 - CookieWarning:
     Wikidata ID: Q26719043
     commit: f697459d94ac1aa8c9d3e417a9b0e04f92640447
