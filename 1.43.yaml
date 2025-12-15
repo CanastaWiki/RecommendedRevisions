@@ -632,7 +632,7 @@ extensions:
     commit: ad0d721ab588c77678a33db304a77bd684724a1a
 - WhosOnline:
     Wikidata ID: Q21679159
-    commit: e072d08f58ea013a40f27dd95ef1eef8bca364c2
+    commit: 29f2c73742071244a0906981417510e5bce9fcd7
     additional steps:
     - database update
 - Widgets:
