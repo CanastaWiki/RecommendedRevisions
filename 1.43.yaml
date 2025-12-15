@@ -632,7 +632,8 @@ extensions:
     commit: ad0d721ab588c77678a33db304a77bd684724a1a
 - WhosOnline:
     Wikidata ID: Q21679159
-    commit: e072d08f58ea013a40f27dd95ef1eef8bca364c2
+    branch: master
+    commit: c707c2935f5e9f739f306c828a54476e47c40cc6
     additional steps:
     - database update
 - Widgets:
