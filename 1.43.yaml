@@ -28,7 +28,7 @@ extensions:
 - ApprovedRevs:
     Wikidata ID: Q21676333
     branch: master
-    commit: fb0a4b9b3b8a38dfc1beaaf3304a93120c73dd52 # v. 2.3
+    commit: c66466f21fd53daacf34ab9bbc2399430dbee615 # v. 2.3.1
     additional steps:
     - database update
 - Arrays:
@@ -632,7 +632,7 @@ extensions:
     commit: ad0d721ab588c77678a33db304a77bd684724a1a
 - WhosOnline:
     Wikidata ID: Q21679159
-    commit: 29f2c73742071244a0906981417510e5bce9fcd7
+    commit: 400cbbcfaa0c766a108b2ec1a23320552d6e2f76 # v. 1.9.0
     additional steps:
     - database update
 - Widgets:
