@@ -201,13 +201,13 @@ extensions:
 - ExternalData:
     Wikidata ID: Q21676576
     branch: master
-    commit: bee4371617089195e3885a3deef16c8fcb8de4fb
+    commit: 4a4d7ff7c313465e6fca58a31a2916712f4d1698 # v. 3.6
     additional steps:
     - database update
 - FlexDiagrams:
     Wikidata ID: Q125545336
     branch: master
-    commit: 183efb105deda9d228041b976cd36c50d3c63628 # v. 0.7
+    commit: 46de86d309ce8ef228925d2f6f4feb26024ee3cf # v. 0.9
 - Gadgets:
     Wikidata ID: Q21676981
     bundled: true
