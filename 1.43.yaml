@@ -532,7 +532,7 @@ extensions:
 - SubPageList:
     Wikidata ID: Q21678751
     repository: https://github.com/ProfessionalWiki/SubPageList
-    commit: c016dcdb7866f20319731e6497b48fd43756505e # v. 3.0.0
+    commit: ae42bd0f2c3e0c73b82787692c75a13cee929121 # v. 3.0.1
 - SyntaxHighlight:
     Wikidata ID: Q21678766
     bundled: true
