@@ -514,7 +514,7 @@ extensions:
 - SimpleMathJax:
     Wikidata ID: Q21678600
     repository: https://github.com/jmnote/SimpleMathJax
-    commit: 7c9de84d219d15243aa153867339ac1a9c1a22e5 # v. 0.8.4
+    commit: b53fdec1fd420744e00e34ddb2c2bd8b40b64005 # v. 0.8.11
 - SkinPerPage:
     Wikidata ID: Q21678617
     commit: cd94d4684782457f81517d6f2692f3af300d9242
