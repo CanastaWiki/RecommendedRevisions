@@ -648,7 +648,7 @@ extensions:
     commit: 47745015c696a341e704e9fa3db0b6a4aad6ccb1
 - WSOAuth:
     Wikidata ID: Q117027185
-    commit: df7e745b69ec61f2cc204546b5c8da098c31cc13
+    commit: 602cd253753a726d404747f10cba631509a32904
     additional steps:
     - composer update
     - database update
