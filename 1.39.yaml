@@ -72,6 +72,9 @@ extensions:
       commit: 0c08d338a1150c76e74ae490cd4d5f5b9f6daa5f
   - CookieWarning:
       commit: bc991e93133bd69fe45e07b3d4554225decc7dae
+  - CrawlerProtection:
+      repository: https://github.com/mywikis/CrawlerProtection
+      commit: ca5f8e993134846a609d2e09da00bbe232adb82a
   - DataTransfer:
       commit: 2f9f949f71f0bb7d1bd8b6b97c795b9428bb1c71
       additional steps:

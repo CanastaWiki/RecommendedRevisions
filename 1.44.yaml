@@ -131,6 +131,10 @@ extensions:
 - CookieWarning:
     Wikidata ID: Q26719043
     commit: 8c45a11812f855e10d0319b513b80ede292c2160
+- CrawlerProtection:
+    Wikidata ID: Q135293666
+    repository: https://github.com/mywikis/CrawlerProtection
+    commit: ca5f8e993134846a609d2e09da00bbe232adb82a
 - CreateRedirect:
     Wikidata ID: Q21676753
     commit: f478df70e2655ad910038cdfbf563f4b1a0b6dfa
