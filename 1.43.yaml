@@ -100,6 +100,8 @@ extensions:
 - CodeEditor:
     Wikidata ID: Q21676530
     bundled: true
+    required extensions:
+    - WikiEditor
 - CodeMirror:
     Wikidata ID: Q21676540
     commit: da01975ea050fe20ea80ff6728bbe0a7a2090c78
@@ -122,6 +124,8 @@ extensions:
 - ConfirmEdit:
     Wikidata ID: Q21676645
     bundled: true
+    required extensions:
+    - AbuseFilter
 - ContactPage:
     Wikidata ID: Q21676642
     commit: 733c519feeafdf296b288500f317512262ffecb7
@@ -301,6 +305,8 @@ extensions:
 - LoginNotify:
     Wikidata ID: Q27907726
     bundled: true
+    required extensions:
+    - Echo
 - LookupUser:
     Wikidata ID: Q21677427
     commit: d0198361db26d3c6c69ce4cff52c85edae79bbe8
@@ -345,6 +351,8 @@ extensions:
 - MobileFrontend:
     Wikidata ID: Q21677641
     commit: 52aa1f0d683d72935fc737b0e7bb0ea906289701
+    required extensions:
+    - MinervaNeue
 - MsUpload:
     Wikidata ID: Q21677697
     commit: 039b6aece443d6d030e187c112ab2520a65915b2
@@ -563,6 +571,9 @@ extensions:
 - TemplateWizard:
     Wikidata ID: Q50368282
     commit: f30e613579b90ff1b166ca08903037415f45471e
+    required extensions:
+    - TemplateData
+    - WikiEditor
 - TextExtracts:
     Wikidata ID: Q21678844
     bundled: true
@@ -655,6 +666,8 @@ extensions:
 - WikiSEO:
     Wikidata ID: Q21679286
     commit: 86611359bfc639beb1b567d7df0edf25a0441aa0
+    required extensions:
+    - PageImages
 - WSOAuth:
     Wikidata ID: Q117027185
     commit: 602cd253753a726d404747f10cba631509a32904
