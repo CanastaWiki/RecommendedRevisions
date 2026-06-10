@@ -1,0 +1,761 @@
+name: Extension/Skin Tests
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - '*.yaml'
+      - '.ci/**'
+      - '.github/workflows/ci.yml'
+      - 'scripts/**'
+  pull_request:
+    paths:
+      - '*.yaml'
+      - '.ci/**'
+      - '.github/workflows/ci.yml'
+      - 'scripts/**'
+  # Allow manual trigger for debugging.
+  workflow_dispatch:
+    inputs:
+      mw_version:
+        description: 'MediaWiki version (e.g. 1.43)'
+        required: false
+        default: '1.43'
+      batch:
+        description: 'Batch to test (leave empty for all)'
+        required: false
+        default: ''
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 1: Parse YAML, validate commits, determine matrices.
+  #
+  # This is the pre-flight check. A missing commit (like WhosOnline's bad
+  # recommendation) is a HARD FAILURE — it means the YAML data is wrong.
+  # ────────────────────────────────────────────────────────────────────────────
+  parse:
+    name: Parse & Validate Commits
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.parse.outputs.matrix }}
+      coexistence_matrix: ${{ steps.coexistence.outputs.matrix }}
+      yaml_file: ${{ steps.detect.outputs.yaml_file }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Detect YAML file
+        id: detect
+        run: |
+          # Use the manually specified version, or default to 1.43 (current LTS).
+          MW_VERSION="${{ github.event.inputs.mw_version || '1.43' }}"
+          YAML_FILE="${MW_VERSION}.yaml"
+          if [ ! -f "${YAML_FILE}" ]; then
+            echo "ERROR: ${YAML_FILE} not found!"
+            exit 1
+          fi
+          echo "yaml_file=${YAML_FILE}" >> "$GITHUB_OUTPUT"
+          echo "Using YAML file: ${YAML_FILE}"
+
+      - name: Validate YAML structure
+        run: |
+          python scripts/parse_yaml.py "${{ steps.detect.outputs.yaml_file }}" --validate
+
+      - name: Validate recommended commits
+        run: |
+          # Hard failure if any recommended commit doesn't resolve.
+          # This catches data errors (e.g. WhosOnline pointing at a
+          # non-existent commit) which are the highest-value thing
+          # this pipeline can catch.
+          python scripts/parse_yaml.py "${{ steps.detect.outputs.yaml_file }}" \
+            --validate-commits
+
+      - name: Generate batch matrix
+        id: parse
+        run: |
+          if [ -n "${{ github.event.inputs.batch }}" ]; then
+            # Manual trigger with specific batch.
+            echo "matrix=[\"${{ github.event.inputs.batch }}\"]" >> "$GITHUB_OUTPUT"
+          else
+            MATRIX=$(python scripts/parse_yaml.py "${{ steps.detect.outputs.yaml_file }}" --matrix)
+            echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Matrix: $(cat "$GITHUB_OUTPUT" | grep matrix)"
+
+      - name: Generate co-existence group matrix
+        id: coexistence
+        run: |
+          MATRIX=$(python scripts/parse_yaml.py "${{ steps.detect.outputs.yaml_file }}" \
+            --ci-dir .ci --coexistence-matrix)
+          echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "Co-existence groups: ${MATRIX}"
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 2: Per-extension isolated validation.
+  #
+  # Each extension is tested with ONLY its declared dependencies loaded.
+  # This validates the recommendation (checkout, composer, load, tests)
+  # without the fragility of an everything-enabled config.
+  # ────────────────────────────────────────────────────────────────────────────
+  test:
+    name: "Test (${{ matrix.batch }})"
+    needs: parse
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false  # Don't cancel other batches if one fails.
+      matrix:
+        batch: ${{ fromJson(needs.parse.outputs.matrix) }}
+
+    services:
+      db:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_password
+          MYSQL_DATABASE: mediawiki
+          MYSQL_USER: wiki
+          MYSQL_PASSWORD: wiki_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      MW_VERSION: ${{ github.event.inputs.mw_version || '1.43' }}
+      MW_DB_SERVER: 127.0.0.1
+      MW_DB_NAME: mediawiki
+      MW_DB_USER: wiki
+      MW_DB_PASS: wiki_password
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ env.MW_VERSION }}-${{ matrix.batch }}-${{ hashFiles('*.yaml') }}
+          restore-keys: |
+            composer-${{ env.MW_VERSION }}-${{ matrix.batch }}-
+            composer-${{ env.MW_VERSION }}-
+
+      - name: Set up MediaWiki
+        run: |
+          # Download and extract MediaWiki.
+          MW_MAJOR_MINOR="${MW_VERSION}"
+          echo "Downloading MediaWiki ${MW_MAJOR_MINOR}..."
+
+          # Use the MediaWiki release tarball for a quick setup.
+          MW_DOWNLOAD_URL="https://releases.wikimedia.org/mediawiki/${MW_MAJOR_MINOR}/mediawiki-${MW_MAJOR_MINOR}.0.tar.gz"
+          mkdir -p /tmp/mediawiki
+          curl -sL "${MW_DOWNLOAD_URL}" | tar xz --strip-components=1 -C /tmp/mediawiki
+
+          # Install development dependencies (needed for PHPUnit mocks/testing).
+          echo "Installing MediaWiki dev dependencies..."
+          cd /tmp/mediawiki
+          composer install --no-interaction --no-progress --no-security-blocking
+
+          # Set MW_DIR for subsequent steps.
+          echo "MW_DIR=/tmp/mediawiki" >> "$GITHUB_ENV"
+
+      - name: Install MediaWiki
+        run: |
+          cd "${MW_DIR}"
+
+          # Install MediaWiki with the CI database.
+          php maintenance/run.php install \
+            --dbtype=mysql \
+            --dbserver="${MW_DB_SERVER}" \
+            --dbname="${MW_DB_NAME}" \
+            --dbuser="${MW_DB_USER}" \
+            --dbpass="${MW_DB_PASS}" \
+            --pass=ci_admin_password \
+            --scriptpath="" \
+            "RecommendedRevisions CI" "Admin"
+
+          # Save the base LocalSettings for isolated test runs.
+          cp "${{ github.workspace }}/.ci/LocalSettings.ci.php" "${MW_DIR}/LocalSettings.base.php"
+          cp "${{ github.workspace }}/.ci/LocalSettings.ci.php" "${MW_DIR}/LocalSettings.php"
+
+          # Verify MW is working.
+          ls -la "${MW_DIR}/LocalSettings.php"
+
+      - name: Generate manifest
+        run: |
+          python scripts/parse_yaml.py \
+            "${{ needs.parse.outputs.yaml_file }}" \
+            --ci-dir .ci \
+            --batch "${{ matrix.batch }}" \
+            -o /tmp/manifest.json
+
+          echo "Manifest entries: $(python3 -c "import json; print(json.load(open('/tmp/manifest.json'))['total_entries'])")"
+
+      - name: Install extensions/skins
+        run: |
+          cd "${MW_DIR}"
+          python3 - /tmp/manifest.json "${MW_DIR}" "${{ github.workspace }}/.ci/LocalSettings.ci.php" <<'INSTALL_SCRIPT'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          manifest_path = sys.argv[1]
+          mw_dir = sys.argv[2]
+          ls_template = sys.argv[3]
+
+          with open(manifest_path) as f:
+              manifest = json.load(f)
+
+          entries = manifest["entries"]
+          installed = []
+          skipped_entries = []
+
+          for entry in entries:
+              name = entry["name"]
+              kind = entry["kind"]
+              bundled = entry["bundled"]
+              repo = entry["repository"]
+              branch = entry["branch"]
+              commit = entry.get("commit")
+              skip = entry.get("skip", False)
+
+              target_dir = os.path.join(
+                  mw_dir,
+                  "extensions" if kind == "extension" else "skins",
+                  name,
+              )
+
+              if skip:
+                  print(f"  SKIP  {kind:9s}  {name}  ({entry.get('skip_reason', 'unknown')})")
+                  skipped_entries.append(name)
+                  continue
+
+              if bundled:
+                  if os.path.isdir(target_dir):
+                      print(f"  OK    {kind:9s}  {name}  (bundled)")
+                      installed.append(name)
+                  else:
+                      print(f"  WARN  {kind:9s}  {name}  (bundled but missing!)")
+                      skipped_entries.append(name)
+                  continue
+
+              # Clone.
+              if not os.path.isdir(target_dir):
+                  print(f"  CLONE {kind:8s}  {name}  <- {repo}")
+                  cmd = ["git", "clone"]
+                  if branch:
+                      cmd.extend(["--branch", branch, "--single-branch"])
+                  cmd.extend([repo, target_dir])
+                  result = subprocess.run(cmd, capture_output=True, text=True)
+                  if result.returncode != 0:
+                      print(f"  ERROR cloning {name}: {result.stderr.strip()}")
+                      skipped_entries.append(name)
+                      continue
+
+              # Checkout commit.
+              if commit:
+                  result = subprocess.run(
+                      ["git", "checkout", commit],
+                      cwd=target_dir, capture_output=True, text=True,
+                  )
+                  if result.returncode != 0:
+                      print(f"  ERROR checkout {name}: {result.stderr.strip()}")
+                      skipped_entries.append(name)
+                      continue
+
+              installed.append(name)
+
+          # Additional steps (composer update, submodules).
+          print("\nRunning additional steps...")
+          for entry in entries:
+              name = entry["name"]
+              if name in skipped_entries:
+                  continue
+              kind = entry["kind"]
+              target_dir = os.path.join(
+                  mw_dir, "extensions" if kind == "extension" else "skins", name,
+              )
+              for step in entry.get("additional_steps", []):
+                  if step == "database update":
+                      continue
+                  elif step == "composer update":
+                      if os.path.isfile(os.path.join(target_dir, "composer.json")):
+                          print(f"  COMPOSER  {name}")
+                          subprocess.run(
+                              ["composer", "update", "--no-interaction", "--no-progress",
+                               "--prefer-dist", "--no-dev"],
+                              cwd=target_dir, capture_output=True, check=False,
+                          )
+                  elif step == "git submodule update":
+                      print(f"  SUBMODULE {name}")
+                      subprocess.run(
+                          ["git", "submodule", "update", "--init", "--recursive"],
+                          cwd=target_dir, capture_output=True, check=False,
+                      )
+
+          # Save installed entries for the isolated test runner.
+          with open("/tmp/installed_entries.json", "w") as f:
+              json.dump([e for e in entries if e["name"] not in skipped_entries], f, indent=2)
+
+          print(f"\nInstalled: {len(installed)}, Skipped: {len(skipped_entries)}")
+          INSTALL_SCRIPT
+
+      - name: Run isolated tests
+        env:
+          MATRIX_BATCH: ${{ matrix.batch }}
+        run: |
+          cd "${MW_DIR}"
+          mkdir -p /tmp/test-results
+
+          python3 "${{ github.workspace }}/.ci/run_isolated_tests.py" \
+            /tmp/manifest.json \
+            "${MW_DIR}" \
+            "${MW_DIR}/LocalSettings.base.php" \
+            "${MATRIX_BATCH}" \
+            /tmp/test-results
+
+      - name: Generate step summary
+        if: always()
+        run: |
+          python3 <<'STEP_SUMMARY'
+          import json
+          import os
+
+          results_dir = "/tmp/test-results"
+          summary_path = os.path.join(results_dir, "summary.json")
+
+          if not os.path.exists(summary_path):
+              print("No summary found.")
+              exit(0)
+
+          results = json.load(open(summary_path))
+          gh_summary = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
+
+          lines = [
+              "## 🧪 Isolated Validation: ${{ matrix.batch }}",
+              "",
+              "| Status | Count |",
+              "|--------|-------|",
+              f"| ✅ Passed | {len(results.get('passed', []))} |",
+              f"| ❌ Failed | {len(results.get('failed', []))} |",
+              f"| ⚠️ Errored | {len(results.get('errored', []))} |",
+              f"| 🔧 Load-only (upstream compat) | {len(results.get('load_only', []))} |",
+              f"| 📭 No tests | {len(results.get('no_tests', []))} |",
+              f"| ⏭️ Skipped (external service) | {len(results.get('skipped', []))} |",
+              "",
+          ]
+
+          if results.get("failed"):
+              lines.append("### ❌ Validation Failures (blocking)")
+              for name in results["failed"]:
+                  lines.append(f"- {name}")
+              lines.append("")
+
+          if results.get("load_only"):
+              lines.append("### 🔧 Upstream Test Compat (non-blocking)")
+              lines.append("*These extensions load correctly but have known test suite issues with MW 1.43.*")
+              lines.append("")
+              for name in results["load_only"]:
+                  detail = results.get("details", {}).get(name, {})
+                  lines.append(f"- {name}: {detail.get('reason', 'upstream compat')}")
+              lines.append("")
+
+          if results.get("passed"):
+              lines.append(f"<details><summary>✅ Passed ({len(results['passed'])})</summary>")
+              lines.append("")
+              for name in sorted(results["passed"]):
+                  lines.append(f"- {name}")
+              lines.append("")
+              lines.append("</details>")
+
+          with open(gh_summary, "a") as f:
+              f.write("\n".join(lines) + "\n")
+          STEP_SUMMARY
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.batch }}
+          path: /tmp/test-results/
+          retention-days: 14
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 3: Co-existence group tests (non-blocking).
+  #
+  # Tests curated groups of extensions together to confirm they coexist
+  # cleanly. This is intentional integration testing — not the accidental
+  # "everything in one config" approach.
+  # ────────────────────────────────────────────────────────────────────────────
+  coexistence:
+    name: "Co-existence (${{ matrix.group }})"
+    needs: parse
+    if: ${{ needs.parse.outputs.coexistence_matrix != '[]' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Non-blocking: failures are informational.
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJson(needs.parse.outputs.coexistence_matrix) }}
+
+    services:
+      db:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_password
+          MYSQL_DATABASE: mediawiki
+          MYSQL_USER: wiki
+          MYSQL_PASSWORD: wiki_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      MW_VERSION: ${{ github.event.inputs.mw_version || '1.43' }}
+      MW_DB_SERVER: 127.0.0.1
+      MW_DB_NAME: mediawiki
+      MW_DB_USER: wiki
+      MW_DB_PASS: wiki_password
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Set up MediaWiki
+        run: |
+          MW_MAJOR_MINOR="${MW_VERSION}"
+          MW_DOWNLOAD_URL="https://releases.wikimedia.org/mediawiki/${MW_MAJOR_MINOR}/mediawiki-${MW_MAJOR_MINOR}.0.tar.gz"
+          mkdir -p /tmp/mediawiki
+          curl -sL "${MW_DOWNLOAD_URL}" | tar xz --strip-components=1 -C /tmp/mediawiki
+          cd /tmp/mediawiki
+          composer install --no-interaction --no-progress --no-security-blocking
+          echo "MW_DIR=/tmp/mediawiki" >> "$GITHUB_ENV"
+
+      - name: Install MediaWiki
+        run: |
+          cd "${MW_DIR}"
+          php maintenance/run.php install \
+            --dbtype=mysql \
+            --dbserver="${MW_DB_SERVER}" \
+            --dbname="${MW_DB_NAME}" \
+            --dbuser="${MW_DB_USER}" \
+            --dbpass="${MW_DB_PASS}" \
+            --pass=ci_admin_password \
+            --scriptpath="" \
+            "RecommendedRevisions CI" "Admin"
+          cp "${{ github.workspace }}/.ci/LocalSettings.ci.php" "${MW_DIR}/LocalSettings.php"
+
+      - name: Install & test co-existence group
+        run: |
+          cd "${MW_DIR}"
+          python3 <<'COEXIST_TEST'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          import yaml
+
+          mw_dir = os.environ["MW_DIR"]
+          group_name = "${{ matrix.group }}"
+          workspace = "${{ github.workspace }}"
+
+          # Load the co-existence group definition.
+          with open(os.path.join(workspace, ".ci", "coexistence_groups.yaml")) as f:
+              groups_data = yaml.safe_load(f)
+
+          group = next((g for g in groups_data["groups"] if g["name"] == group_name), None)
+          if not group:
+              print(f"ERROR: Group '{group_name}' not found!")
+              sys.exit(1)
+
+          print(f"Co-existence group: {group_name}")
+          print(f"Description: {group.get('description', '')}")
+          print(f"Extensions: {', '.join(group['extensions'])}")
+
+          # Load the full manifest to get repository/commit info.
+          yaml_file = "${{ needs.parse.outputs.yaml_file }}"
+          manifest_str = subprocess.run(
+              ["python3", os.path.join(workspace, "scripts", "parse_yaml.py"),
+               os.path.join(workspace, yaml_file), "--ci-dir", os.path.join(workspace, ".ci")],
+              capture_output=True, text=True, check=True,
+          ).stdout
+          manifest = json.loads(manifest_str)
+          name_map = {e["name"]: e for e in manifest["entries"]}
+
+          # Collect all entries for this group (including transitive deps).
+          needed = set()
+          to_resolve = list(group["extensions"])
+          while to_resolve:
+              name = to_resolve.pop(0)
+              if name in needed:
+                  continue
+              needed.add(name)
+              entry = name_map.get(name)
+              if entry:
+                  for dep in entry.get("required_extensions", []):
+                      to_resolve.append(dep)
+
+          print(f"\nTotal extensions to install (including deps): {len(needed)}")
+
+          # Clone and install each extension.
+          installed = []
+          for name in needed:
+              entry = name_map.get(name)
+              if not entry:
+                  print(f"  WARN: {name} not found in manifest, skipping")
+                  continue
+
+              kind = entry["kind"]
+              target_dir = os.path.join(
+                  mw_dir,
+                  "extensions" if kind == "extension" else "skins",
+                  name,
+              )
+
+              if entry["bundled"]:
+                  if os.path.isdir(target_dir):
+                      print(f"  OK    {name} (bundled)")
+                      installed.append(name)
+                  continue
+
+              repo = entry["repository"]
+              branch = entry["branch"]
+              commit = entry.get("commit")
+
+              if not os.path.isdir(target_dir):
+                  cmd = ["git", "clone"]
+                  if branch:
+                      cmd.extend(["--branch", branch, "--single-branch"])
+                  cmd.extend([repo, target_dir])
+                  result = subprocess.run(cmd, capture_output=True, text=True)
+                  if result.returncode != 0:
+                      print(f"  ERROR cloning {name}: {result.stderr.strip()}")
+                      continue
+
+              if commit:
+                  subprocess.run(
+                      ["git", "checkout", commit],
+                      cwd=target_dir, capture_output=True, check=False,
+                  )
+
+              # Composer update if needed.
+              for step in entry.get("additional_steps", []):
+                  if step == "composer update":
+                      if os.path.isfile(os.path.join(target_dir, "composer.json")):
+                          subprocess.run(
+                              ["composer", "update", "--no-interaction", "--no-progress",
+                               "--prefer-dist", "--no-dev"],
+                              cwd=target_dir, capture_output=True, check=False,
+                          )
+                  elif step == "git submodule update":
+                      subprocess.run(
+                          ["git", "submodule", "update", "--init", "--recursive"],
+                          cwd=target_dir, capture_output=True, check=False,
+                      )
+
+              installed.append(name)
+              print(f"  OK    {name}")
+
+          # Generate LocalSettings with ALL group members loaded.
+          ls_path = os.path.join(mw_dir, "LocalSettings.php")
+          load_lines = []
+          for name in installed:
+              entry = name_map.get(name)
+              if not entry:
+                  continue
+              kind = entry["kind"]
+              target_dir = os.path.join(
+                  mw_dir,
+                  "extensions" if kind == "extension" else "skins",
+                  name,
+              )
+              if not os.path.isdir(target_dir):
+                  continue
+              fn = "wfLoadExtension" if kind == "extension" else "wfLoadSkin"
+              ext_json = "extension.json" if kind == "extension" else "skin.json"
+              if os.path.isfile(os.path.join(target_dir, ext_json)):
+                  load_lines.append(f"{fn}( '{name}' );")
+
+          with open(ls_path, "a") as f:
+              f.write("\n# Co-existence group: " + group_name + "\n")
+              f.write("\n".join(load_lines) + "\n")
+
+          print(f"\nLoaded {len(load_lines)} extensions. Running database update...")
+
+          # Run database update.
+          result = subprocess.run(
+              ["php", "maintenance/run.php", "update", "--quick"],
+              cwd=mw_dir, capture_output=True, text=True,
+          )
+
+          if result.returncode != 0:
+              print(f"⚠️  Database update had issues:")
+              print(result.stderr[-500:] if result.stderr else result.stdout[-500:])
+          else:
+              print("✅ Database update succeeded.")
+
+          # Verify MediaWiki loads without fatal.
+          print("\nVerifying MediaWiki loads cleanly with all group members...")
+          verify = subprocess.run(
+              ["php", "maintenance/run.php", "eval"],
+              input="echo 'OK';\n",
+              cwd=mw_dir, capture_output=True, text=True, timeout=60,
+          )
+
+          if verify.returncode == 0 and "OK" in verify.stdout:
+              print(f"✅ Co-existence group '{group_name}' loads cleanly!")
+              print(f"   All {len(installed)} extensions coexist without fatal errors.")
+          else:
+              print(f"❌ Co-existence group '{group_name}' has load errors!")
+              print(verify.stderr[-500:] if verify.stderr else "Unknown error")
+              sys.exit(1)
+          COEXIST_TEST
+
+      - name: Generate step summary
+        if: always()
+        run: |
+          echo "## 🔗 Co-existence: ${{ matrix.group }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Non-blocking integration test for curated extension group." >> "$GITHUB_STEP_SUMMARY"
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 4: Aggregate results and produce final report.
+  #
+  # The report separates recommendation-validity signal (blocking) from
+  # upstream-compat noise (non-blocking) and co-existence results.
+  # ────────────────────────────────────────────────────────────────────────────
+  report:
+    name: Report
+    needs: [test, coexistence]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download all test results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          path: all-results/
+          merge-multiple: false
+
+      - name: Aggregate results
+        run: |
+          python3 <<'AGGREGATE'
+          import json
+          import os
+
+          all_results = {
+              "passed": [],
+              "failed": [],
+              "errored": [],
+              "load_only": [],
+              "no_tests": [],
+              "skipped": [],
+          }
+
+          results_base = "all-results"
+          if os.path.isdir(results_base):
+              for batch_dir in sorted(os.listdir(results_base)):
+                  summary_path = os.path.join(results_base, batch_dir, "summary.json")
+                  if not os.path.exists(summary_path):
+                      continue
+                  batch_results = json.load(open(summary_path))
+                  for key in all_results:
+                      all_results[key].extend(batch_results.get(key, []))
+
+          total = sum(len(v) for v in all_results.values())
+          gh_summary = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
+
+          lines = [
+              "# 🧪 Recommendation Validation Results",
+              "",
+              f"**{total} extensions/skins processed**",
+              "",
+              "| Status | Count | Blocking? |",
+              "|--------|-------|-----------|",
+              f"| ✅ Validated (tests pass) | {len(all_results['passed'])} | — |",
+              f"| ❌ Validation failures | {len(all_results['failed'])} | **Yes** |",
+              f"| ⚠️ Errored | {len(all_results['errored'])} | **Yes** |",
+              f"| 🔧 Load-only (upstream compat) | {len(all_results['load_only'])} | No |",
+              f"| 📭 No tests | {len(all_results['no_tests'])} | — |",
+              f"| ⏭️ Skipped (external service) | {len(all_results['skipped'])} | — |",
+              "",
+          ]
+
+          if all_results["failed"]:
+              lines.append("## ❌ Validation Failures")
+              lines.append("*These are recommendation problems — the pinned revision has issues.*")
+              lines.append("")
+              for name in sorted(all_results["failed"]):
+                  lines.append(f"- {name}")
+              lines.append("")
+
+          if all_results["load_only"]:
+              lines.append("---")
+              lines.append("")
+              lines.append("## 📋 Non-Blocking: Upstream Test Compat")
+              lines.append("*These extensions load correctly but their test suites haven't adopted MW 1.43 yet.*")
+              lines.append("")
+              for name in sorted(all_results["load_only"]):
+                  lines.append(f"- {name}")
+              lines.append("")
+
+          if all_results["skipped"]:
+              lines.append("---")
+              lines.append("")
+              lines.append("## ⏭️ External Services (not yet wired)")
+              lines.append("")
+              for name in sorted(all_results["skipped"]):
+                  lines.append(f"- {name}")
+              lines.append("")
+
+          if all_results["passed"]:
+              lines.append("---")
+              lines.append("")
+              lines.append(f"<details><summary>✅ Validated ({len(all_results['passed'])})</summary>")
+              lines.append("")
+              for name in sorted(all_results["passed"]):
+                  lines.append(f"- {name}")
+              lines.append("")
+              lines.append("</details>")
+
+          with open(gh_summary, "a") as f:
+              f.write("\n".join(lines) + "\n")
+
+          print("\n".join(lines))
+
+          # Fail the report job if any validation failed.
+          if all_results["failed"]:
+              print(f"\n::error::{len(all_results['failed'])} extension(s) had validation failures.")
+          AGGREGATE

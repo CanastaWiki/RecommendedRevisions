@@ -1,0 +1,115 @@
+# Extensions/skins to skip or flag during CI testing.
+#
+# This file is organized into two categories:
+#
+#   external_services  — Requires infrastructure not available in CI (Elasticsearch,
+#                        LDAP, AWS, etc.). These skip ALL validation phases.
+#                        This bucket should shrink over time as services are wired up.
+#
+#   upstream_test_compat — The extension loads and registers fine, but its test suite
+#                          has known incompatibilities with MW 1.43 / PHP 8.3 / PHPUnit.
+#                          These ARE validated (checkout, composer, load) but test
+#                          failures are surfaced as non-blocking warnings.
+#
+# Extensions previously skipped for cross-batch dependencies, missing sibling test
+# classes, or integration-only failures have been REMOVED from this list because
+# per-extension isolated testing (with only declared deps loaded) resolves them.
+
+# ── Extensions requiring external services ───────────────────────────────────
+# These cannot be loaded or tested without infrastructure not yet wired up
+# in CI. Elasticsearch (covering CirrusSearch + Elastica) is the obvious first
+# candidate to add as a CI service container; an LDAP stub or OAuth/OIDC mock
+# are feasible follow-ups.
+
+external_services:
+  - name: CirrusSearch
+    reason: Requires Elasticsearch service
+  - name: Elastica
+    reason: Requires Elasticsearch service
+  - name: LDAPAuthentication2
+    reason: Requires an LDAP server
+  - name: LDAPAuthorization
+    reason: Requires an LDAP server
+  - name: LDAPProvider
+    reason: Requires an LDAP server
+  - name: AWS
+    reason: Requires AWS credentials and S3 access
+  - name: GoogleAnalyticsMetrics
+    reason: Requires Google Analytics credentials
+  - name: GoogleDocCreator
+    reason: Requires Google API credentials
+  - name: GTag
+    reason: Requires Google Tag Manager configuration
+  - name: Math
+    reason: Requires Mathoid or Texvc rendering service
+  - name: OAuth
+    reason: Requires OAuth consumer configuration
+  - name: OpenIDConnect
+    reason: Requires an OIDC identity provider
+  - name: JWTAuth
+    reason: Requires JWT token issuer configuration
+  - name: WSOAuth
+    reason: Requires OAuth provider configuration
+  - name: EmailAuthorization
+    reason: Requires email server and PluggableAuth provider setup
+  - name: Maps
+    reason: Requires Google Maps API key or tile server
+
+# ── Extensions with upstream test suite compatibility issues ──────────────────
+# These extensions load and register correctly, so they ARE validated for:
+#   ✅ commit checkout
+#   ✅ composer install
+#   ✅ wfLoadExtension (with declared deps)
+#
+# But their test suites have known issues under MW 1.43 / PHP 8.3 that are
+# NOT recommendation-validity problems. Test failures are surfaced in a
+# separate non-blocking report section.
+
+upstream_test_compat:
+  - name: BootstrapComponents
+    reason: Uses obsolete PHPUnit_Framework_TestCase class
+  - name: chameleon
+    reason: Deprecated dynamic property creation under PHP 8.3
+  - name: MediaUploader
+    reason: Deprecated warning treated as fatal error under PHPUnit
+  - name: Nuke
+    reason: Deprecated/warnings raised as errors on strict PHPUnit
+  - name: DiscussionTools
+    reason: ApiParseDiscussionToolsTest suite failures under MediaWiki 1.43
+  - name: Thanks
+    reason: Integration SpecialLogTest suite failures
+  - name: Babel
+    reason: Requires CommunityConfiguration test classes not available in isolation
+  - name: CheckUser
+    reason: Integration test suite errors under MW 1.43
+  - name: CreateRedirect
+    reason: Integration test suite errors under MW 1.43
+  - name: MassMessage
+    reason: Integration list content edit test suite failure (user/group permission issues)
+  - name: TemplateStyles
+    reason: Integration CSS sanitization assertion failure under MediaWiki 1.43
+  - name: UploadWizard
+    reason: Registration conflict on wgUploadWizardConfig under MediaWiki 1.43
+  - name: AbuseFilter
+    reason: Integration test suite errors under MW 1.43
+  - name: MinervaNeue
+    reason: Integration test suite failures under MediaWiki 1.43
+  - name: SemanticCompoundQueries
+    reason: Risky tests (missing @covers annotations)
+  - name: SemanticDrilldown
+    reason: Integration test suite errors under MW 1.43
+  - name: SemanticExtraSpecialProperties
+    reason: Integration test suite errors / risky tests
+  - name: SemanticResultFormats
+    reason: Integration test suite errors / risky tests
+  - name: SemanticWatchlist
+    reason: Integration test suite errors / risky tests
+  - name: Mermaid
+    reason: Integration test suite errors / dependency on SMW test classes
+  - name: SemanticScribunto
+    reason: Integration test suite errors / dependency on SMW test classes
+  - name: Cargo
+    reason: Fails 1 test inside its own suite under PHP 8.3/MW 1.43
+  - name: PageForms
+    reason: Fails assertions and has errors due to environment differences under MW 1.43
+

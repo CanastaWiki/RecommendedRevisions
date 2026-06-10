@@ -1,0 +1,40 @@
+# Curated co-existence groups for integration testing.
+#
+# Each group represents a realistic co-deployment scenario — extensions that
+# real wikis commonly enable together. The CI pipeline loads all members of a
+# group into one MediaWiki instance and verifies they coexist cleanly (no
+# fatal errors, database updates succeed).
+#
+# Guidelines for adding groups:
+#   - Keep groups small and focused (5–15 extensions).
+#   - Each member must already pass per-extension isolated validation.
+#   - Name groups after the use-case, not the batch letter.
+#   - Grow this set deliberately over time; don't add groups speculatively.
+
+groups:
+  - name: semantic-ecosystem
+    description: Semantic MediaWiki and its satellite extensions
+    extensions:
+      - SemanticMediaWiki
+      - SemanticResultFormats
+      - SemanticCompoundQueries
+      - SemanticDependencyUpdater
+      - SemanticDrilldown
+      - SemanticExtraSpecialProperties
+      - SemanticScribunto
+      - SemanticWatchlist
+      - SemanticBreadcrumbLinks
+      - SemanticFormsSelect
+      - SemanticTasks
+      - Mermaid
+      - Scribunto  # required by SemanticScribunto
+
+  - name: forms-data
+    description: Form-building and structured data extensions
+    extensions:
+      - Cargo
+      - PageForms
+      - PageSchemas
+      - DataTransfer
+      - ExternalData
+      - FlexDiagrams

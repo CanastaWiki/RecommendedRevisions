@@ -1,0 +1,58 @@
+# Docker Compose stack for CI testing of RecommendedRevisions.
+#
+# Provides a MediaWiki instance with MariaDB for running extension/skin
+# PHPUnit and parser tests.
+#
+# Usage:
+#   MW_VERSION=1.43 docker compose -f .ci/docker-compose.ci.yml up -d
+#   docker compose -f .ci/docker-compose.ci.yml exec mediawiki \
+#       php tests/phpunit/phpunit.php extensions/ParserFunctions/tests/phpunit/
+
+services:
+  db:
+    image: mariadb:10.6
+    environment:
+      MYSQL_ROOT_PASSWORD: ci_root_password
+      MYSQL_DATABASE: mediawiki
+      MYSQL_USER: wiki
+      MYSQL_PASSWORD: wiki_password
+    tmpfs:
+      - /var/lib/mysql  # RAM-backed storage for faster CI
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mediawiki:
+    image: mediawiki:${MW_VERSION:-1.43}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MW_DB_TYPE: mysql
+      MW_DB_SERVER: db
+      MW_DB_NAME: mediawiki
+      MW_DB_USER: wiki
+      MW_DB_PASS: wiki_password
+      MW_ADMIN_USER: Admin
+      MW_ADMIN_PASS: ci_admin_password
+      MW_SERVER: "http://localhost:8080"
+      MW_SCRIPT_PATH: ""
+    volumes:
+      # Mount the CI LocalSettings on top of whatever the image provides.
+      - ./LocalSettings.ci.php:/var/www/html/LocalSettings.php:ro
+      # Mount the extension/skin install + test scripts.
+      - ./install_extensions.sh:/ci/install_extensions.sh:ro
+      - ./run_tests.sh:/ci/run_tests.sh:ro
+      - ./run_isolated_tests.py:/ci/run_isolated_tests.py:ro
+      - ./coexistence_groups.yaml:/ci/coexistence_groups.yaml:ro
+      # Mount the repo root so we can access the YAML and scripts.
+      - ..:/ci/repo:ro
+      # Writable directory for test results.
+      - test-results:/ci/test-results
+    ports:
+      - "8080:80"
+
+volumes:
+  test-results:
