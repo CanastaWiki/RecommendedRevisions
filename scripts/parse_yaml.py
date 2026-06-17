@@ -293,21 +293,25 @@ def load_skip_list(ci_dir: str) -> dict:
       {
         "external_services": {"ExtName", ...},
         "upstream_test_compat": {"ExtName", ...},
+        "partial_test_compat": {"ExtName": ["path/to/excluded_test.php", ...], ...},
       }
     """
     skip_path = os.path.join(ci_dir, "skip_list.yaml")
     if not os.path.exists(skip_path):
-        return {"external_services": set(), "upstream_test_compat": set()}
+        return {"external_services": set(), "upstream_test_compat": set(),
+                "partial_test_compat": {}}
 
     with open(skip_path) as f:
         data = yaml.safe_load(f)
 
     if not data:
-        return {"external_services": set(), "upstream_test_compat": set()}
+        return {"external_services": set(), "upstream_test_compat": set(),
+                "partial_test_compat": {}}
 
     result = {
         "external_services": set(),
         "upstream_test_compat": set(),
+        "partial_test_compat": {},
     }
 
     # Handle the new categorized format.
@@ -315,6 +319,8 @@ def load_skip_list(ci_dir: str) -> dict:
         result["external_services"].add(item["name"])
     for item in data.get("upstream_test_compat", []):
         result["upstream_test_compat"].add(item["name"])
+    for item in data.get("partial_test_compat", []):
+        result["partial_test_compat"][item["name"]] = item.get("exclude_tests", [])
 
     # Backward compat: also handle the old flat "skip:" format.
     for item in data.get("skip", []):
@@ -390,6 +396,7 @@ def build_manifest(yaml_path: str, skip_data: dict | None = None) -> dict:
     if skip_data:
         external = skip_data.get("external_services", set())
         upstream = skip_data.get("upstream_test_compat", set())
+        partial = skip_data.get("partial_test_compat", {})
 
         for e in all_entries:
             if e["name"] in external:
@@ -401,6 +408,10 @@ def build_manifest(yaml_path: str, skip_data: dict | None = None) -> dict:
                 e["skip_tests"] = True
                 e["skip_reason"] = "Upstream test compat issue (non-blocking)"
                 e["skip_category"] = "upstream_test_compat"
+            elif e["name"] in partial:
+                e["skip"] = False
+                e["exclude_tests"] = partial[e["name"]]
+                e["skip_category"] = "partial_test_compat"
 
         # Transitive skipping: if a required extension is fully skipped
         # (external_services), skip dependents too.

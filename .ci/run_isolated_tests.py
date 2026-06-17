@@ -132,9 +132,21 @@ def run_db_update(mw_dir: str) -> bool:
         return False
 
 
-def run_phpunit(mw_dir: str, test_dir: str, result_file: str, timeout: int = 300) -> dict:
+def run_phpunit(
+    mw_dir: str,
+    test_dir: str,
+    result_file: str,
+    exclude_files: list[str] | None = None,
+    timeout: int = 300,
+) -> dict:
     """
     Run PHPUnit for an extension's test directory.
+
+    Args:
+        exclude_files: Optional list of test file paths (relative to extension
+                       root) to exclude.  Since PHPUnit 9 has no --exclude-file
+                       flag, we enumerate the test files and omit the excluded
+                       ones, passing the remaining files individually.
 
     Returns a dict with status and details.
     """
@@ -143,8 +155,36 @@ def run_phpunit(mw_dir: str, test_dir: str, result_file: str, timeout: int = 300
         return {"status": "error", "message": "No PHPUnit runner found"}
 
     try:
+        cmd = ["php", phpunit_runner, "--log-junit", result_file]
+
+        if exclude_files:
+            # Resolve excluded paths to absolute paths for comparison.
+            # test_dir is <mw_dir>/extensions/<Name>/tests/phpunit
+            # exclude paths are relative to <mw_dir>/extensions/<Name>/
+            ext_base = os.path.dirname(os.path.dirname(test_dir))
+            excluded_abs = set()
+            for ef in exclude_files:
+                abs_path = os.path.realpath(os.path.join(ext_base, ef))
+                excluded_abs.add(abs_path)
+
+            # Enumerate all test PHP files and filter out excluded ones.
+            test_files = []
+            for root, _dirs, files in os.walk(test_dir):
+                for f in sorted(files):
+                    if f.endswith(".php"):
+                        fpath = os.path.realpath(os.path.join(root, f))
+                        if fpath not in excluded_abs:
+                            test_files.append(fpath)
+
+            if not test_files:
+                return {"status": "no_tests", "message": "All test files excluded"}
+
+            cmd.extend(test_files)
+        else:
+            cmd.append(test_dir)
+
         proc = subprocess.run(
-            ["php", phpunit_runner, "--log-junit", result_file, test_dir],
+            cmd,
             cwd=mw_dir,
             capture_output=True,
             text=True,
@@ -265,9 +305,13 @@ def main():
             continue
 
         # ── Phase 4: Run PHPUnit tests ───────────────────────────────
-        print(f"  Running PHPUnit tests...")
+        exclude_files = entry.get("exclude_tests", [])
+        if exclude_files:
+            print(f"  Running PHPUnit tests (excluding {len(exclude_files)} file(s))...")
+        else:
+            print(f"  Running PHPUnit tests...")
         result_file = os.path.join(results_dir, f"{name}.xml")
-        test_result = run_phpunit(mw_dir, test_dir, result_file)
+        test_result = run_phpunit(mw_dir, test_dir, result_file, exclude_files=exclude_files)
 
         status = test_result["status"]
         results["details"][name] = test_result
