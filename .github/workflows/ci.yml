@@ -639,7 +639,12 @@ jobs:
               print(f"   All {len(installed)} extensions coexist without fatal errors.")
           else:
               print(f"❌ Co-existence group '{group_name}' has load errors!")
-              print(verify.stderr[-500:] if verify.stderr else "Unknown error")
+              if verify.stderr:
+                  print(verify.stderr[-500:])
+              elif verify.stdout:
+                  print(verify.stdout[-500:])
+              else:
+                  print(f"Exit code: {verify.returncode}, no output captured")
               sys.exit(1)
           COEXIST_TEST
 

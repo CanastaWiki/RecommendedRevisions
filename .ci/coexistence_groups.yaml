@@ -23,9 +23,6 @@ groups:
       - SemanticExtraSpecialProperties
       - SemanticScribunto
       - SemanticWatchlist
-      - SemanticBreadcrumbLinks
-      - SemanticFormsSelect
-      - SemanticTasks
       - Mermaid
       - Scribunto  # required by SemanticScribunto
 
