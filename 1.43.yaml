@@ -562,7 +562,7 @@ extensions:
     commit: db217336a3e2c455c5e24303b2e793623b80a055
 - TemplateStyles:
     Wikidata ID: Q25916623
-    commit: 31a4bd259a921e19b4857befa700e7fc0998b6d2
+    commit: daad80e73caa4e9f5b538361a155f933c33d50c2
     additional steps:
     - composer update
 - TemplateStylesExtender:
