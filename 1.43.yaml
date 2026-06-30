@@ -496,8 +496,6 @@ extensions:
     Wikidata ID: Q20728
     repository: https://github.com/SemanticMediaWiki/SemanticMediaWiki
     commit: 16171910b16165089d19fc6f66c414e6f62aa1eb # v. 6.0.0
-    persistent directories:
-    - config
     additional steps:
     - composer update
     - database update
@@ -551,7 +549,7 @@ extensions:
     Wikidata ID: Q21678751
     repository: https://github.com/ProfessionalWiki/SubPageList
     commit: ae42bd0f2c3e0c73b82787692c75a13cee929121 # v. 3.0.1
-- SyntaxHighlight:
+- SyntaxHighlight_GeSHi:
     Wikidata ID: Q21678766
     bundled: true
 - TemplateData:
