@@ -204,8 +204,8 @@ extensions:
 - EmbedVideo:
     Wikidata ID: Q123153544
     repository: https://github.com/StarCitizenWiki/mediawiki-extensions-EmbedVideo
-    branch: REL1_43
-    commit: 86bbf18eece780ecd178af5211f4605a8f13e4f8
+    branch: master
+    commit: 6982ef6e10a8327a6ecc97eb036f4eb531a6f830 # v. 4.1.0
 - EventLogging:
     Wikidata ID: Q21676443
     commit: 411fc0d6c8538b0064e0d75b5302534c7f28ac50
@@ -672,7 +672,8 @@ extensions:
     - PageImages
 - WSOAuth:
     Wikidata ID: Q117027185
-    commit: 77f5a3700d64b50c0e9e98e9684cb150e4a3d90a
+    branch: master
+    commit: 602cd253753a726d404747f10cba631509a32904 # v. 9.0.1
     additional steps:
     - composer update
     - database update
