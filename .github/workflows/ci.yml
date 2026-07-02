@@ -8,12 +8,14 @@ on:
       - '.ci/**'
       - '.github/workflows/ci.yml'
       - 'scripts/**'
+      - 'tests/**'
   pull_request:
     paths:
       - '*.yaml'
       - '.ci/**'
       - '.github/workflows/ci.yml'
       - 'scripts/**'
+      - 'tests/**'
   # Allow manual trigger for debugging.
   workflow_dispatch:
     inputs:
@@ -51,6 +53,11 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
+
+      - name: Unit test parse_yaml.py
+        run: |
+          pip install pytest
+          python -m pytest tests/ -q
 
       - name: Detect YAML file
         id: detect
