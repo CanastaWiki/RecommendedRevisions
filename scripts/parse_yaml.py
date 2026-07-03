@@ -205,6 +205,15 @@ def validate_commits(entries: list[dict]) -> list[str]:
         if not repo:
             continue
 
+        # If it's a Gerrit URL, map it to the GitHub mirror to avoid HTTP 429 rate limits in CI.
+        # This keeps the actual metadata using Gerrit but does validation against the fast GitHub mirror.
+        if repo.startswith("https://gerrit.wikimedia.org/r/mediawiki/"):
+            parts = repo.split("/")
+            if len(parts) >= 7:
+                kind = parts[5]  # 'extensions' or 'skins'
+                name_part = parts[6]  # extension/skin name
+                repo = f"https://github.com/wikimedia/mediawiki-{kind}-{name_part}"
+
         commit = e["commit"]
         name = e["name"]
         branch = e.get("branch")
