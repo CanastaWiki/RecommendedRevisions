@@ -570,16 +570,9 @@ jobs:
                       cwd=target_dir, capture_output=True, check=False,
                   )
 
-              # Composer update if needed.
+              # Handle git submodule updates per-extension.
               for step in entry.get("additional_steps", []):
-                  if step == "composer update":
-                      if os.path.isfile(os.path.join(target_dir, "composer.json")):
-                          subprocess.run(
-                              ["composer", "update", "--no-interaction", "--no-progress",
-                               "--prefer-dist", "--no-dev"],
-                              cwd=target_dir, capture_output=True, check=False,
-                          )
-                  elif step == "git submodule update":
+                  if step == "git submodule update":
                       subprocess.run(
                           ["git", "submodule", "update", "--init", "--recursive"],
                           cwd=target_dir, capture_output=True, check=False,
@@ -587,6 +580,39 @@ jobs:
 
               installed.append(name)
               print(f"  OK    {name}")
+
+          # Create composer.local.json to configure composer-merge-plugin to include
+          # all extension and skin composer.json files.
+          composer_local_path = os.path.join(mw_dir, "composer.local.json")
+          composer_local_data = {
+              "extra": {
+                  "merge-plugin": {
+                      "include": [
+                          "extensions/*/composer.json",
+                          "skins/*/composer.json"
+                      ]
+                  }
+              }
+          }
+          with open(composer_local_path, "w") as f:
+              json.dump(composer_local_data, f, indent=4)
+
+          # Run a single root-level composer update to resolve all extension
+          # dependencies together.  MW's composer-merge-plugin discovers
+          # extensions/*/composer.json automatically, so this produces a
+          # consistent dependency graph — unlike per-extension resolution
+          # which caused ~50 % flake rate in the SMW ecosystem (see #16).
+          print("\nRunning root-level composer update for unified dependency resolution...")
+          result = subprocess.run(
+              ["composer", "update", "--no-interaction", "--no-progress",
+               "--prefer-dist", "--no-dev"],
+              cwd=mw_dir, capture_output=True, text=True,
+          )
+          if result.returncode != 0:
+              print(f"⚠️  Root composer update had issues:")
+              print(result.stderr[-500:] if result.stderr else result.stdout[-500:])
+          else:
+              print("✅ Root composer update succeeded.")
 
           # Generate LocalSettings with ALL group members loaded.
           ls_path = os.path.join(mw_dir, "LocalSettings.php")
