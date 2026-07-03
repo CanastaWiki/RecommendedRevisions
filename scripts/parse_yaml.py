@@ -219,8 +219,9 @@ def validate_commits(entries: list[dict]) -> list[str]:
                     capture_output=True, text=True, timeout=30,
                 )
                 if result.returncode != 0:
-                    msg = f"{name}: branch '{branch}' not found in {repo}"
-                    print(f"FAIL (branch missing)")
+                    err_msg = result.stderr.strip().replace('\n', ' ')
+                    msg = f"{name}: branch '{branch}' not found in {repo} (git error: {err_msg})"
+                    print(f"FAIL (branch missing: {err_msg})")
                     failures.append(msg)
                     continue
 
@@ -247,11 +248,12 @@ def validate_commits(entries: list[dict]) -> list[str]:
                     capture_output=True, text=True, timeout=60,
                 )
                 if fetch_result.returncode != 0:
+                    err_msg = fetch_result.stderr.strip().replace('\n', ' ')
                     msg = (
                         f"{name}: commit {commit[:12]} not found in "
-                        f"{repo} (branch: {branch or 'default'})"
+                        f"{repo} (branch: {branch or 'default'}) (git error: {err_msg})"
                     )
-                    print(f"FAIL")
+                    print(f"FAIL ({err_msg})")
                     failures.append(msg)
                 else:
                     print(f"OK")
