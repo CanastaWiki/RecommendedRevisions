@@ -322,7 +322,7 @@ extensions:
 - Maps:
     Wikidata ID: Q21677553
     repository: https://github.com/ProfessionalWiki/Maps
-    commit: 958b64d521732cc5ad3530cc94a09884d51bcefc # v. 12.0.0
+    commit: 42faa03514e20068247e49c94e65550a0d241228 # v. 13.0.1
     additional steps:
     - composer update
 - MassMessage:
@@ -382,7 +382,7 @@ extensions:
     - database update
 - OAuth:
     Wikidata ID: Q21677849
-    commit: 0d466bcb3c0146dedc44ac8dce2fea7f0d749f31
+    commit: 2deadfa73ad7897e7f3ac6965a5ccefa09c61f6d
 - OpenGraphMeta:
     Wikidata ID: Q21677897
     commit: cb990fcea3b7827f02bcc328e367a7b2387a32a3
@@ -403,7 +403,7 @@ extensions:
 - PageForms:
     Wikidata ID: Q21678466
     branch: master
-    commit: b3e62bd2e36387b5328457afccd3c00ce8f28cce # v. 6.0.8
+    commit: b0dadd1e4fbc9a77e51ec117b10e0d5f9e2eee2b # v. 6.0.9
 - PageImages:
     Wikidata ID: Q21677945
     bundled: true
