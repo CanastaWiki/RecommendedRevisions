@@ -69,7 +69,7 @@ extensions:
 - Cargo:
     Wikidata ID: Q21676223
     branch: master
-    commit: 7d92aee4a12e4eaefeff973eec6cafc838f845f0 # v. 3.9.1
+    commit: 2eeb4575748ee5be024038c69c740a7213d944a4 # v. 3.9.2
     additional steps:
     - database update
 - CategoryTree:
@@ -143,6 +143,9 @@ extensions:
 - CreateRedirect:
     Wikidata ID: Q21676753
     commit: 17f4ab36038cdf7d568bd17dcf8ebc2110c9dcb9
+- CreateUserPage:
+    Wikidata ID: Q30248654
+    commit: 2b467c4ad37759294f3584fc5217e000d9df1d90
 - DataTransfer:
     Wikidata ID: Q21677041
     branch: master
@@ -201,8 +204,8 @@ extensions:
 - EmbedVideo:
     Wikidata ID: Q123153544
     repository: https://github.com/StarCitizenWiki/mediawiki-extensions-EmbedVideo
-    branch: REL1_43
-    commit: 8c7c8994b1ac2466339e53674df9140c4de76c67
+    branch: master
+    commit: 6982ef6e10a8327a6ecc97eb036f4eb531a6f830 # v. 4.1.0
 - EventLogging:
     Wikidata ID: Q21676443
     commit: 411fc0d6c8538b0064e0d75b5302534c7f28ac50
@@ -493,8 +496,6 @@ extensions:
     Wikidata ID: Q20728
     repository: https://github.com/SemanticMediaWiki/SemanticMediaWiki
     commit: 16171910b16165089d19fc6f66c414e6f62aa1eb # v. 6.0.0
-    persistent directories:
-    - config
     additional steps:
     - composer update
     - database update
@@ -548,7 +549,7 @@ extensions:
     Wikidata ID: Q21678751
     repository: https://github.com/ProfessionalWiki/SubPageList
     commit: ae42bd0f2c3e0c73b82787692c75a13cee929121 # v. 3.0.1
-- SyntaxHighlight:
+- SyntaxHighlight_GeSHi:
     Wikidata ID: Q21678766
     bundled: true
 - TemplateData:
@@ -559,7 +560,7 @@ extensions:
     commit: db217336a3e2c455c5e24303b2e793623b80a055
 - TemplateStyles:
     Wikidata ID: Q25916623
-    commit: 31a4bd259a921e19b4857befa700e7fc0998b6d2
+    commit: daad80e73caa4e9f5b538361a155f933c33d50c2
     additional steps:
     - composer update
 - TemplateStylesExtender:
@@ -650,6 +651,7 @@ extensions:
     commit: ad0d721ab588c77678a33db304a77bd684724a1a
 - WhosOnline:
     Wikidata ID: Q21679159
+    branch: master
     commit: 400cbbcfaa0c766a108b2ec1a23320552d6e2f76 # v. 1.9.0
     additional steps:
     - database update
@@ -670,7 +672,8 @@ extensions:
     - PageImages
 - WSOAuth:
     Wikidata ID: Q117027185
-    commit: 602cd253753a726d404747f10cba631509a32904
+    branch: master
+    commit: 602cd253753a726d404747f10cba631509a32904 # v. 9.0.1
     additional steps:
     - composer update
     - database update

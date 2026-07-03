@@ -1,6 +1,6 @@
 # Recommended Revisions
 
-[![Extension/Skin Tests](https://github.com/vm-pranavan/RecommendedRevisions/actions/workflows/ci.yml/badge.svg?branch=ci/add-extension-tests)](https://github.com/vm-pranavan/RecommendedRevisions/actions/workflows/ci.yml)
+[![Extension/Skin Tests](https://github.com/CanastaWiki/RecommendedRevisions/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/CanastaWiki/RecommendedRevisions/actions/workflows/ci.yml)
 
 Recommended Revisions is a project to try to find a consensus-based listing of the ideal revision to use for any extension or skin, for different MediaWiki versions. This repository holds YAML files containing the actual data for this project.
 
