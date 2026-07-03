@@ -534,13 +534,36 @@ jobs:
                   for dep in entry.get("required_extensions", []):
                       to_resolve.append(dep)
 
-          print(f"\nTotal extensions to install (including deps): {len(needed)}")
+          # Sort needed extensions topologically to ensure proper install/load order.
+          sorted_names = []
+          visited = set()
+          temp_visited = set()
+
+          def visit(n):
+              if n in temp_visited:
+                  return
+              if n in visited:
+                  return
+              temp_visited.add(n)
+              ent = name_map.get(n)
+              if ent:
+                  for dep in ent.get("required_extensions", []):
+                      if dep in needed:
+                          visit(dep)
+              temp_visited.remove(n)
+              visited.add(n)
+              sorted_names.append(n)
+
+          for n in needed:
+              visit(n)
+
+          print(f"\nTotal extensions to install (including deps): {len(sorted_names)}")
 
           # Clone and install each extension in topological order.
           installed = []
-          for entry in manifest["entries"]:
-              name = entry["name"]
-              if name not in needed:
+          for name in sorted_names:
+              entry = name_map.get(name)
+              if not entry:
                   continue
 
               kind = entry["kind"]
