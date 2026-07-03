@@ -536,12 +536,11 @@ jobs:
 
           print(f"\nTotal extensions to install (including deps): {len(needed)}")
 
-          # Clone and install each extension.
+          # Clone and install each extension in topological order.
           installed = []
-          for name in needed:
-              entry = name_map.get(name)
-              if not entry:
-                  print(f"  WARN: {name} not found in manifest, skipping")
+          for entry in manifest["entries"]:
+              name = entry["name"]
+              if name not in needed:
                   continue
 
               kind = entry["kind"]
