@@ -205,15 +205,21 @@ def test_load_skip_list_categorized(tmp_path):
         "  - name: CirrusSearch\n    reason: Needs Elasticsearch\n"
         "upstream_test_compat:\n"
         "  - name: Cargo\n    reason: One failing test\n"
+        "partial_test_compat:\n"
+        "  - name: PageForms\n"
+        "    reason: PFHelperFormActionTest fail\n"
+        "    exclude_tests:\n"
+        "      - tests/phpunit/integration/includes/PFHelperFormActionTest.php\n"
     ))
     data = parse_yaml.load_skip_list(ci_dir)
     assert data["external_services"] == {"CirrusSearch"}
     assert data["upstream_test_compat"] == {"Cargo"}
+    assert data["partial_test_compat"] == {"PageForms": ["tests/phpunit/integration/includes/PFHelperFormActionTest.php"]}
 
 
 def test_load_skip_list_missing_file_returns_empty(tmp_path):
     data = parse_yaml.load_skip_list(str(tmp_path))
-    assert data == {"external_services": set(), "upstream_test_compat": set()}
+    assert data == {"external_services": set(), "upstream_test_compat": set(), "partial_test_compat": {}}
 
 
 # ── build_manifest (integration of the above) ────────────────────────────────
@@ -282,3 +288,18 @@ def test_build_manifest_transitive_skip(tmp_path):
     ext_b = next(e for e in manifest["entries"] if e["name"] == "ExtB")
     assert ext_b["skip"] is True
     assert ext_b["skip_category"] == "transitive"
+
+
+def test_build_manifest_partial_test_compat(tmp_path):
+    skip_data = {
+        "external_services": set(),
+        "upstream_test_compat": set(),
+        "partial_test_compat": {"Cargo": ["tests/phpunit/integration/formats/CargoFeedFormatTest.php"]}
+    }
+    manifest = parse_yaml.build_manifest(_write_manifest_yaml(tmp_path), skip_data)
+    cargo = next(e for e in manifest["entries"] if e["name"] == "Cargo")
+    assert cargo["skip"] is False
+    assert cargo.get("skip_tests") is not True
+    assert cargo["exclude_tests"] == ["tests/phpunit/integration/formats/CargoFeedFormatTest.php"]
+    assert cargo["skip_category"] == "partial_test_compat"
+
