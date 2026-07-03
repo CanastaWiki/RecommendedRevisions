@@ -634,7 +634,7 @@ jobs:
           print("\nRunning root-level composer update for unified dependency resolution...")
           result = subprocess.run(
               ["composer", "update", "--no-interaction", "--no-progress",
-               "--prefer-dist", "--no-dev"],
+               "--prefer-dist", "--no-dev", "--with-all-dependencies"],
               cwd=mw_dir, capture_output=True, text=True,
           )
           if result.returncode != 0:
