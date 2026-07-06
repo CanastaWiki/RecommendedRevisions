@@ -171,7 +171,7 @@ def run_phpunit(
             test_files = []
             for root, _dirs, files in os.walk(test_dir):
                 for f in sorted(files):
-                    if f.endswith(".php"):
+                    if f.endswith("Test.php"):
                         fpath = os.path.realpath(os.path.join(root, f))
                         if fpath not in excluded_abs:
                             test_files.append(fpath)

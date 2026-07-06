@@ -564,6 +564,7 @@ jobs:
           for name in sorted_names:
               entry = name_map.get(name)
               if not entry:
+                  print(f"  WARN: {name} not found in manifest, skipping")
                   continue
 
               kind = entry["kind"]
@@ -638,8 +639,9 @@ jobs:
               cwd=mw_dir, capture_output=True, text=True,
           )
           if result.returncode != 0:
-              print(f"⚠️  Root composer update had issues:")
-              print(result.stderr[-500:] if result.stderr else result.stdout[-500:])
+              print("❌ Root composer update failed:")
+              print(result.stderr if result.stderr else result.stdout)
+              sys.exit(1)
           else:
               print("✅ Root composer update succeeded.")
 
