@@ -615,6 +615,13 @@ jobs:
           # all extension and skin composer.json files.
           composer_local_path = os.path.join(mw_dir, "composer.local.json")
           composer_local_data = {
+              "config": {
+                  "policy": {
+                      "advisories": {
+                          "block": False
+                      }
+                  }
+              },
               "extra": {
                   "merge-plugin": {
                       "include": [
