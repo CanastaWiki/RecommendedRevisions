@@ -615,13 +615,6 @@ jobs:
           # all extension and skin composer.json files.
           composer_local_path = os.path.join(mw_dir, "composer.local.json")
           composer_local_data = {
-              "config": {
-                  "policy": {
-                      "advisories": {
-                          "block": False
-                      }
-                  }
-              },
               "extra": {
                   "merge-plugin": {
                       "include": [
@@ -633,6 +626,22 @@ jobs:
           }
           with open(composer_local_path, "w") as f:
               json.dump(composer_local_data, f, indent=4)
+
+          # Disable security advisory blocking directly in the root composer.json,
+          # as config sections of merged files are ignored by default.
+          root_composer_path = os.path.join(mw_dir, "composer.json")
+          if os.path.isfile(root_composer_path):
+              with open(root_composer_path, "r") as f:
+                  root_composer_data = json.load(f)
+              if "config" not in root_composer_data:
+                  root_composer_data["config"] = {}
+              if "policy" not in root_composer_data["config"]:
+                  root_composer_data["config"]["policy"] = {}
+              if "advisories" not in root_composer_data["config"]["policy"]:
+                  root_composer_data["config"]["policy"]["advisories"] = {}
+              root_composer_data["config"]["policy"]["advisories"]["block"] = False
+              with open(root_composer_path, "w") as f:
+                  json.dump(root_composer_data, f, indent=4)
 
           # Run a single root-level composer update to resolve all extension
           # dependencies together.  MW's composer-merge-plugin discovers
