@@ -108,8 +108,20 @@ upstream_test_compat:
     reason: Integration test suite errors / dependency on SMW test classes
   - name: SemanticScribunto
     reason: Integration test suite errors / dependency on SMW test classes
-  - name: Cargo
-    reason: Fails 1 test inside its own suite under PHP 8.3/MW 1.43
-  - name: PageForms
-    reason: Fails assertions and has errors due to environment differences under MW 1.43
 
+# ── Extensions with partial test exclusions ──────────────────────────────────
+# These extensions pass the vast majority of their test suite. Only a few
+# specific test files fail due to MW 1.43 / PHP 8.3 incompatibilities.
+# The listed test files are excluded; the rest of the suite runs normally
+# and counts as blocking validation.
+
+partial_test_compat:
+  - name: Cargo
+    reason: CargoFeedFormatTest expects old heading HTML; MW 1.43 changed heading markup
+    exclude_tests:
+      - tests/phpunit/integration/formats/CargoFeedFormatTest.php
+  - name: PageForms
+    reason: PFHelperFormActionTest references removed MediaWiki\Skin\SkinTemplate class; PFFormLinkerTest has environment-dependent assertion
+    exclude_tests:
+      - tests/phpunit/integration/includes/PFFormLinkerTest.php
+      - tests/phpunit/integration/includes/PFHelperFormActionTest.php
