@@ -303,3 +303,150 @@ def test_build_manifest_partial_test_compat(tmp_path):
     assert cargo["exclude_tests"] == ["tests/phpunit/integration/formats/CargoFeedFormatTest.php"]
     assert cargo["skip_category"] == "partial_test_compat"
 
+
+# ── _is_transient_git_error ──────────────────────────────────────────────────
+
+class TestIsTransientGitError:
+    """Verify that the transient-error detector matches known patterns."""
+
+    @pytest.mark.parametrize("stderr", [
+        "fatal: unable to access 'https://github.com/…/': The requested URL returned error: 503",
+        "error: The requested URL returned error: 429",
+        "fatal: unable to access 'https://…': Could not resolve host: github.com",
+        "fatal: unable to access 'https://…': Connection reset by peer",
+        "fatal: unable to access 'https://…': Connection timed out",
+        "fatal: unable to access 'https://…': SSL connection timeout",
+        "fatal: unable to access 'https://…': Failed to connect to github.com",
+        "fatal: unable to access 'https://…': Connection refused",
+        "fatal: unable to access 'https://…': Network is unreachable",
+        "fatal: unable to access 'https://…': gnutls_handshake() failed: TLS error",
+    ])
+    def test_transient_patterns_match(self, stderr):
+        assert parse_yaml._is_transient_git_error(stderr) is True
+
+    @pytest.mark.parametrize("stderr", [
+        "fatal: couldn't find remote ref refs/heads/REL1_99",
+        "error: no such remote ref abcdef1234567890",
+        "fatal: not our ref abcdef1234567890",
+        "",
+    ])
+    def test_non_transient_patterns_do_not_match(self, stderr):
+        assert parse_yaml._is_transient_git_error(stderr) is False
+
+
+# ── _run_git_with_retry ──────────────────────────────────────────────────────
+
+from unittest.mock import patch, MagicMock
+import subprocess
+
+
+def _make_result(returncode, stderr=""):
+    """Create a fake subprocess.CompletedProcess."""
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout="", stderr=stderr)
+
+
+class TestRunGitWithRetry:
+    """Verify exponential-backoff retry logic in _run_git_with_retry."""
+
+    @patch("parse_yaml.subprocess.run")
+    def test_success_on_first_try(self, mock_run):
+        mock_run.return_value = _make_result(0)
+        result = parse_yaml._run_git_with_retry(
+            ["git", "ls-remote", "https://example.com"],
+            max_retries=3, _sleep_fn=lambda _: None,
+        )
+        assert result.returncode == 0
+        assert mock_run.call_count == 1
+
+    @patch("parse_yaml.subprocess.run")
+    def test_retries_on_transient_then_succeeds(self, mock_run):
+        mock_run.side_effect = [
+            _make_result(128, "fatal: unable to access '…': The requested URL returned error: 503"),
+            _make_result(128, "fatal: unable to access '…': The requested URL returned error: 503"),
+            _make_result(0),
+        ]
+        sleeps = []
+        result = parse_yaml._run_git_with_retry(
+            ["git", "ls-remote", "https://example.com"],
+            max_retries=3, base_delay=1, _sleep_fn=sleeps.append,
+        )
+        assert result.returncode == 0
+        assert mock_run.call_count == 3
+        # Exponential backoff: 1*2^0=1, 1*2^1=2
+        assert sleeps == [1, 2]
+
+    @patch("parse_yaml.subprocess.run")
+    def test_gives_up_after_max_retries(self, mock_run):
+        transient = _make_result(128, "fatal: unable to access '…': 503")
+        mock_run.return_value = transient
+        result = parse_yaml._run_git_with_retry(
+            ["git", "ls-remote", "https://example.com"],
+            max_retries=2, base_delay=1, _sleep_fn=lambda _: None,
+        )
+        assert result.returncode == 128
+        # 1 initial + 2 retries = 3 total attempts
+        assert mock_run.call_count == 3
+
+    @patch("parse_yaml.subprocess.run")
+    def test_non_transient_error_fails_immediately(self, mock_run):
+        mock_run.return_value = _make_result(128, "fatal: not our ref abcdef")
+        result = parse_yaml._run_git_with_retry(
+            ["git", "ls-remote", "https://example.com"],
+            max_retries=3, _sleep_fn=lambda _: None,
+        )
+        assert result.returncode == 128
+        # No retry for genuine errors.
+        assert mock_run.call_count == 1
+
+    @patch("parse_yaml.subprocess.run")
+    def test_timeout_propagates(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=60)
+        with pytest.raises(subprocess.TimeoutExpired):
+            parse_yaml._run_git_with_retry(
+                ["git", "fetch", "https://example.com"],
+                max_retries=3, _sleep_fn=lambda _: None,
+            )
+
+
+# ── validate_commits retry integration ───────────────────────────────────────
+
+class TestValidateCommitsRetry:
+    """Verify that validate_commits retries transient errors end-to-end."""
+
+    def _entry(self, name="TestExt", commit="abcdef123456", branch="REL1_43",
+               repo="https://github.com/example/repo"):
+        return {
+            "name": name,
+            "kind": "extension",
+            "bundled": False,
+            "repository": repo,
+            "branch": branch,
+            "commit": commit,
+        }
+
+    @patch("parse_yaml._run_git_with_retry")
+    @patch("parse_yaml.subprocess.run")
+    def test_transient_branch_check_is_retried(self, mock_raw_run, mock_retry):
+        """Branch check uses _run_git_with_retry so transient errors get retried."""
+        # _run_git_with_retry is called for both branch check and fetch.
+        # First call (branch check) succeeds; second call (fetch) succeeds.
+        mock_retry.return_value = _make_result(0)
+        mock_raw_run.return_value = _make_result(0)  # git init --bare
+
+        entries = [self._entry()]
+        failures = parse_yaml.validate_commits(entries)
+        assert failures == []
+        # _run_git_with_retry should be called at least for branch check
+        assert mock_retry.call_count >= 1
+
+    @patch("parse_yaml._run_git_with_retry")
+    @patch("parse_yaml.subprocess.run")
+    def test_genuine_missing_branch_still_fails(self, mock_raw_run, mock_retry):
+        """A genuine missing branch (non-transient) still fails after retry exhaustion."""
+        mock_retry.return_value = _make_result(2, "fatal: couldn't find remote ref refs/heads/REL1_99")
+
+        entries = [self._entry(branch="REL1_99")]
+        failures = parse_yaml.validate_commits(entries)
+        assert len(failures) == 1
+        assert "REL1_99" in failures[0]
+
