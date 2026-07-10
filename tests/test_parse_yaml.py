@@ -313,7 +313,7 @@ class TestIsTransientGitError:
         "fatal: unable to access 'https://github.com/…/': The requested URL returned error: 503",
         "error: The requested URL returned error: 429",
         "fatal: unable to access 'https://…': Could not resolve host: github.com",
-        "fatal: unable to access 'https://…': Connection reset by peer",
+        "fatal: unable to access 'https://…': connection reset by peer",
         "fatal: unable to access 'https://…': Connection timed out",
         "fatal: unable to access 'https://…': SSL connection timeout",
         "fatal: unable to access 'https://…': Failed to connect to github.com",
@@ -328,6 +328,10 @@ class TestIsTransientGitError:
         "fatal: couldn't find remote ref refs/heads/REL1_99",
         "error: no such remote ref abcdef1234567890",
         "fatal: not our ref abcdef1234567890",
+        # SHA containing '503' as substring (false positive check)
+        "fatal: remote error: upload-pack: not our ref a1b2503c4d5e",
+        # SHA containing '429' as substring (false positive check)
+        "fatal: remote error: upload-pack: not our ref a1b2429c4d5e",
         "",
     ])
     def test_non_transient_patterns_do_not_match(self, stderr):
@@ -377,7 +381,7 @@ class TestRunGitWithRetry:
 
     @patch("parse_yaml.subprocess.run")
     def test_gives_up_after_max_retries(self, mock_run):
-        transient = _make_result(128, "fatal: unable to access '…': 503")
+        transient = _make_result(128, "fatal: unable to access '…': The requested URL returned error: 503")
         mock_run.return_value = transient
         result = parse_yaml._run_git_with_retry(
             ["git", "ls-remote", "https://example.com"],
@@ -424,29 +428,74 @@ class TestValidateCommitsRetry:
             "commit": commit,
         }
 
-    @patch("parse_yaml._run_git_with_retry")
     @patch("parse_yaml.subprocess.run")
-    def test_transient_branch_check_is_retried(self, mock_raw_run, mock_retry):
+    def test_transient_branch_check_is_retried(self, mock_run):
         """Branch check uses _run_git_with_retry so transient errors get retried."""
-        # _run_git_with_retry is called for both branch check and fetch.
-        # First call (branch check) succeeds; second call (fetch) succeeds.
-        mock_retry.return_value = _make_result(0)
-        mock_raw_run.return_value = _make_result(0)  # git init --bare
+        # First call (git ls-remote) has transient error, second call succeeds.
+        # Third call (git init) succeeds.
+        # Fourth call (git fetch) succeeds.
+        mock_run.side_effect = [
+            _make_result(128, "fatal: unable to access '…': The requested URL returned error: 503"),
+            _make_result(0),
+            _make_result(0),  # git init
+            _make_result(0),  # git fetch
+        ]
 
         entries = [self._entry()]
-        failures = parse_yaml.validate_commits(entries)
+        with patch("time.sleep") as mock_sleep:
+            failures = parse_yaml.validate_commits(entries)
         assert failures == []
-        # _run_git_with_retry should be called at least for branch check
-        assert mock_retry.call_count >= 1
+        assert mock_sleep.call_count == 1
+        # 1 failed + 1 successful ls-remote + 1 init + 1 fetch = 4 runs
+        assert mock_run.call_count == 4
 
-    @patch("parse_yaml._run_git_with_retry")
     @patch("parse_yaml.subprocess.run")
-    def test_genuine_missing_branch_still_fails(self, mock_raw_run, mock_retry):
-        """A genuine missing branch (non-transient) still fails after retry exhaustion."""
-        mock_retry.return_value = _make_result(2, "fatal: couldn't find remote ref refs/heads/REL1_99")
+    def test_genuine_missing_branch_fails_immediately(self, mock_run):
+        """A genuine missing branch (non-transient) fails without retrying."""
+        mock_run.side_effect = [
+            _make_result(2, "fatal: couldn't find remote ref refs/heads/REL1_99"),
+        ]
 
         entries = [self._entry(branch="REL1_99")]
-        failures = parse_yaml.validate_commits(entries)
+        with patch("time.sleep") as mock_sleep:
+            failures = parse_yaml.validate_commits(entries)
         assert len(failures) == 1
         assert "REL1_99" in failures[0]
+        # Should not sleep because there are no retries
+        assert mock_sleep.call_count == 0
+        # Should have called subprocess.run only once for the ls-remote command
+        assert mock_run.call_count == 1
+
+    @patch("parse_yaml.subprocess.run")
+    def test_circuit_breaker_stops_retries(self, mock_run):
+        """After _CONSECUTIVE_TRANSIENT_LIMIT transient failures, subsequent checks skip immediately."""
+        # 3 consecutive transient failures across different entries:
+        # Ext1 ls-remote: transient (retried, fails) -> consecutive_transient = 1
+        # Ext2 ls-remote: transient (retried, fails) -> consecutive_transient = 2
+        # Ext3 ls-remote: transient (retried, fails) -> consecutive_transient = 3
+        # Ext4: skipped by circuit breaker without running
+        transient_error = _make_result(128, "fatal: unable to access '…': Could not resolve host")
+        mock_run.return_value = transient_error
+
+        entries = [
+            self._entry(name="Ext1"),
+            self._entry(name="Ext2"),
+            self._entry(name="Ext3"),
+            self._entry(name="Ext4"),
+        ]
+        with patch("time.sleep") as mock_sleep:
+            failures = parse_yaml.validate_commits(entries)
+
+        assert len(failures) == 4
+        assert "Ext1" in failures[0]
+        assert "Ext2" in failures[1]
+        assert "Ext3" in failures[2]
+        assert "circuit-breaker" in failures[3]
+        assert "Ext4" in failures[3]
+
+        # Ext1, Ext2, Ext3 are each checked 4 times (1 initial + 3 retries) -> 12 calls total.
+        # Ext4 should not call subprocess.run at all.
+        assert mock_run.call_count == 12
+        # Each failed entry has 3 retries (thus 3 sleeps) -> 9 sleeps total.
+        assert mock_sleep.call_count == 9
 
