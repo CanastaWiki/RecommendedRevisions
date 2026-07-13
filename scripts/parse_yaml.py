@@ -201,7 +201,6 @@ def topological_sort(entries: list[dict]) -> list[dict]:
 _TRANSIENT_PATTERNS = re.compile(
     r"returned error: 5\d\d|"
     r"returned error: 429|"
-    r"unable to access|"
     r"Could not resolve host|"
     r"connection reset|"
     r"timed out|"

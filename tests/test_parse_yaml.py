@@ -332,6 +332,8 @@ class TestIsTransientGitError:
         "fatal: remote error: upload-pack: not our ref a1b2503c4d5e",
         # SHA containing '429' as substring (false positive check)
         "fatal: remote error: upload-pack: not our ref a1b2429c4d5e",
+        # Generic HTTP prefix with a 404 (non-transient check)
+        "fatal: unable to access 'https://github.com/x/y.git/': The requested URL returned error: 404",
         "",
     ])
     def test_non_transient_patterns_do_not_match(self, stderr):
