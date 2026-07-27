@@ -149,7 +149,7 @@ extensions:
 - DataTransfer:
     Wikidata ID: Q21677041
     branch: master
-    commit: 14267432de28f319530bc5336323ca714122300b # v. 1.8
+    commit: a512e20daa4a2eb9b33b80a9cf76f0a8d91336b4 # v. 1.8.1
     additional steps:
     - composer update
 - DeleteBatch:
