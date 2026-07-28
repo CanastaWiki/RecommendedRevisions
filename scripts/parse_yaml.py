@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from collections import defaultdict
 
 import yaml
@@ -192,12 +193,94 @@ def topological_sort(entries: list[dict]) -> list[dict]:
 
 # ── Commit validation ────────────────────────────────────────────────────────
 
+# Patterns in git stderr that indicate a transient (retryable) network error
+# rather than a genuine "ref/commit does not exist" data error.
+#
+# HTTP codes are anchored to git's "returned error: NNN" phrasing so that
+# hex SHAs containing 503/429 as substrings are not misclassified.
+_TRANSIENT_PATTERNS = re.compile(
+    r"returned error: 5\d\d|"
+    r"returned error: 429|"
+    r"Could not resolve host|"
+    r"connection reset|"
+    r"timed out|"
+    r"SSL|TLS|"
+    r"couldn't connect to server|"
+    r"Failed to connect|"
+    r"Connection refused|"
+    r"Network is unreachable",
+    re.IGNORECASE,
+)
+
+# Default retry parameters (overridable for testing).
+_RETRY_COUNT = 3
+_RETRY_BASE_DELAY = 2  # seconds; actual delay = base * 2^attempt
+
+# Circuit-breaker: after this many consecutive transient failures across
+# entries, stop retrying and fail fast (the remote is probably down).
+_CONSECUTIVE_TRANSIENT_LIMIT = 3
+
+
+def _is_transient_git_error(stderr: str) -> bool:
+    """Return True if *stderr* from a git command looks like a transient network error."""
+    return bool(_TRANSIENT_PATTERNS.search(stderr))
+
+
+def _run_git_with_retry(
+    cmd: list[str],
+    *,
+    timeout: int = 60,
+    max_retries: int = _RETRY_COUNT,
+    base_delay: float = _RETRY_BASE_DELAY,
+    _sleep_fn=None,
+) -> subprocess.CompletedProcess:
+    """Run a git command, retrying on transient network errors with exponential backoff.
+
+    Non-transient failures (e.g. "not our ref", exit-code != 0 with no
+    network-error pattern) are returned immediately so the caller can
+    report them as genuine data errors without waiting.
+
+    *_sleep_fn* is injectable for testing so tests don't actually sleep.
+    """
+    if _sleep_fn is None:
+        _sleep_fn = time.sleep
+
+    last_result = None
+    for attempt in range(max_retries + 1):
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if result.returncode == 0:
+            return result
+
+        # Non-zero exit — decide whether to retry.
+        if _is_transient_git_error(result.stderr) and attempt < max_retries:
+            delay = base_delay * (2 ** attempt)
+            print(f"RETRY ({attempt + 1}/{max_retries}, "
+                  f"wait {delay}s: {result.stderr.strip()[:80]})", flush=True)
+            _sleep_fn(delay)
+            last_result = result
+            continue
+
+        # Genuine error or retries exhausted — return as-is.
+        return result
+
+    # Should not be reached, but satisfy the type checker.
+    return last_result  # type: ignore[return-value]
+
+
 def validate_commits(entries: list[dict]) -> list[str]:
     """
     Verify each pinned commit exists in its repository via git ls-remote.
     Returns a list of failure messages (empty = all good).
+
+    A circuit-breaker stops retrying after ``_CONSECUTIVE_TRANSIENT_LIMIT``
+    consecutive transient failures — at that point the remote is likely down
+    and retrying every subsequent entry would just waste CI time.
     """
+    import tempfile
+
     failures = []
+    consecutive_transient = 0
+
     for e in entries:
         if e["bundled"] or not e.get("commit"):
             continue
@@ -218,17 +301,33 @@ def validate_commits(entries: list[dict]) -> list[str]:
         name = e["name"]
         branch = e.get("branch")
 
+        # Circuit-breaker: if we've seen too many consecutive transient
+        # failures, the remote is down — stop retrying and fail fast.
+        if consecutive_transient >= _CONSECUTIVE_TRANSIENT_LIMIT:
+            msg = (
+                f"{name}: skipped (circuit-breaker: "
+                f"{consecutive_transient} consecutive transient failures)"
+            )
+            print(f"  Checking {name} ({commit[:12]})... "
+                  f"SKIP (circuit-breaker)", flush=True)
+            failures.append(msg)
+            continue
+
         print(f"  Checking {name} ({commit[:12]})...", end=" ", flush=True)
 
         try:
             # First: verify the branch exists (if specified).
             if branch:
-                result = subprocess.run(
+                result = _run_git_with_retry(
                     ["git", "ls-remote", "--exit-code", repo, f"refs/heads/{branch}"],
-                    capture_output=True, text=True, timeout=30,
+                    timeout=30,
                 )
                 if result.returncode != 0:
                     err_msg = result.stderr.strip().replace('\n', ' ')
+                    if _is_transient_git_error(result.stderr):
+                        consecutive_transient += 1
+                    else:
+                        consecutive_transient = 0
                     msg = f"{name}: branch '{branch}' not found in {repo} (git error: {err_msg})"
                     print(f"FAIL (branch missing: {err_msg})")
                     failures.append(msg)
@@ -245,19 +344,22 @@ def validate_commits(entries: list[dict]) -> list[str]:
             #
             # Fastest reliable approach: attempt a fetch of the specific SHA.
             # If the server supports it, this works in one round-trip.
-            import tempfile
             with tempfile.TemporaryDirectory() as tmpdir:
                 # Init a bare repo and try to fetch the exact commit.
                 subprocess.run(
                     ["git", "init", "--bare", tmpdir],
                     capture_output=True, check=True,
                 )
-                fetch_result = subprocess.run(
+                fetch_result = _run_git_with_retry(
                     ["git", "-C", tmpdir, "fetch", "--depth=1", repo, commit],
-                    capture_output=True, text=True, timeout=60,
+                    timeout=60,
                 )
                 if fetch_result.returncode != 0:
                     err_msg = fetch_result.stderr.strip().replace('\n', ' ')
+                    if _is_transient_git_error(fetch_result.stderr):
+                        consecutive_transient += 1
+                    else:
+                        consecutive_transient = 0
                     msg = (
                         f"{name}: commit {commit[:12]} not found in "
                         f"{repo} (branch: {branch or 'default'}) (git error: {err_msg})"
@@ -265,12 +367,15 @@ def validate_commits(entries: list[dict]) -> list[str]:
                     print(f"FAIL ({err_msg})")
                     failures.append(msg)
                 else:
+                    consecutive_transient = 0
                     print(f"OK")
         except subprocess.TimeoutExpired:
+            consecutive_transient += 1
             msg = f"{name}: timeout verifying commit {commit[:12]} against {repo}"
             print(f"TIMEOUT")
             failures.append(msg)
         except Exception as exc:
+            consecutive_transient = 0
             msg = f"{name}: error verifying commit: {exc}"
             print(f"ERROR ({exc})")
             failures.append(msg)
