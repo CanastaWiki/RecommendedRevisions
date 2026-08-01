@@ -139,7 +139,7 @@ extensions:
 - CrawlerProtection:
     Wikidata ID: Q135293666
     repository: https://github.com/mywikis/CrawlerProtection
-    commit: 0da95035d6e99fbf2578f4ac29fe40bd8d743f4f # v. 1.5.0
+    commit: c72eec320f87776a21deedf9147e8f9eae335fd0 # v. 1.7.0
 - CreateRedirect:
     Wikidata ID: Q21676753
     commit: 17f4ab36038cdf7d568bd17dcf8ebc2110c9dcb9
