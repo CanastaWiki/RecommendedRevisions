@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from collections import defaultdict
 
@@ -204,11 +205,16 @@ _TRANSIENT_PATTERNS = re.compile(
     r"Could not resolve host|"
     r"connection reset|"
     r"timed out|"
-    r"SSL|TLS|"
+    r"gnutls|SSL connection timeout|SSL certificate problem|SSL_ERROR|TLS handshake|TLS connection reset|TLS error|"
     r"couldn't connect to server|"
     r"Failed to connect|"
     r"Connection refused|"
-    r"Network is unreachable",
+    r"Network is unreachable|"
+    r"the remote end hung up unexpectedly|"
+    r"RPC failed|"
+    r"early EOF|"
+    r"Empty reply from server|"
+    r"Error in the HTTP2 framing layer",
     re.IGNORECASE,
 )
 
@@ -232,6 +238,7 @@ def _run_git_with_retry(
     timeout: int = 60,
     max_retries: int = _RETRY_COUNT,
     base_delay: float = _RETRY_BASE_DELAY,
+    retry_prefix: str | None = None,
     _sleep_fn=None,
 ) -> subprocess.CompletedProcess:
     """Run a git command, retrying on transient network errors with exponential backoff.
@@ -245,26 +252,38 @@ def _run_git_with_retry(
     if _sleep_fn is None:
         _sleep_fn = time.sleep
 
-    last_result = None
+    last_exception = None
     for attempt in range(max_retries + 1):
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        if result.returncode == 0:
-            return result
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            if result.returncode == 0:
+                return result
 
-        # Non-zero exit — decide whether to retry.
-        if _is_transient_git_error(result.stderr) and attempt < max_retries:
+            # Non-zero exit — decide whether to retry.
+            stderr_to_check = result.stderr
+            is_transient = _is_transient_git_error(stderr_to_check)
+            err_details = stderr_to_check.strip()[:80]
+        except subprocess.TimeoutExpired as exc:
+            if attempt >= max_retries:
+                raise
+            result = None
+            is_transient = True
+            err_details = f"command timed out after {timeout}s"
+            last_exception = exc
+
+        if is_transient and attempt < max_retries:
             delay = base_delay * (2 ** attempt)
-            print(f"RETRY ({attempt + 1}/{max_retries}, "
-                  f"wait {delay}s: {result.stderr.strip()[:80]})", flush=True)
+            print(f"\n  RETRY ({attempt + 1}/{max_retries}, "
+                  f"wait {delay}s: {err_details})", flush=True)
             _sleep_fn(delay)
-            last_result = result
+            if retry_prefix:
+                print(retry_prefix, end="", flush=True)
             continue
 
-        # Genuine error or retries exhausted — return as-is.
-        return result
-
-    # Should not be reached, but satisfy the type checker.
-    return last_result  # type: ignore[return-value]
+        if result is not None:
+            return result
+        else:
+            raise last_exception
 
 
 def validate_commits(entries: list[dict]) -> list[str]:
@@ -276,10 +295,10 @@ def validate_commits(entries: list[dict]) -> list[str]:
     consecutive transient failures — at that point the remote is likely down
     and retrying every subsequent entry would just waste CI time.
     """
-    import tempfile
-
     failures = []
     consecutive_transient = 0
+    start_time = time.monotonic()
+    max_elapsed_seconds = 600
 
     for e in entries:
         if e["bundled"] or not e.get("commit"):
@@ -301,18 +320,22 @@ def validate_commits(entries: list[dict]) -> list[str]:
         name = e["name"]
         branch = e.get("branch")
 
+        # Total elapsed budget check
+        if time.monotonic() - start_time > max_elapsed_seconds:
+            msg = f"Validation aborted: exceeded total elapsed time limit of {max_elapsed_seconds}s"
+            print(f"\n⚠️  {msg}", flush=True)
+            failures.append(msg)
+            break
+
         # Circuit-breaker: if we've seen too many consecutive transient
         # failures, the remote is down — stop retrying and fail fast.
         if consecutive_transient >= _CONSECUTIVE_TRANSIENT_LIMIT:
-            msg = (
-                f"{name}: skipped (circuit-breaker: "
-                f"{consecutive_transient} consecutive transient failures)"
-            )
-            print(f"  Checking {name} ({commit[:12]})... "
-                  f"SKIP (circuit-breaker)", flush=True)
+            msg = f"Validation aborted after {consecutive_transient} consecutive transient failures — remote appears unreachable"
+            print(f"\n⚠️  {msg}", flush=True)
             failures.append(msg)
-            continue
+            break
 
+        prefix = f"  Checking {name} ({commit[:12]})... "
         print(f"  Checking {name} ({commit[:12]})...", end=" ", flush=True)
 
         try:
@@ -321,6 +344,7 @@ def validate_commits(entries: list[dict]) -> list[str]:
                 result = _run_git_with_retry(
                     ["git", "ls-remote", "--exit-code", repo, f"refs/heads/{branch}"],
                     timeout=30,
+                    retry_prefix=prefix,
                 )
                 if result.returncode != 0:
                     err_msg = result.stderr.strip().replace('\n', ' ')
@@ -353,6 +377,7 @@ def validate_commits(entries: list[dict]) -> list[str]:
                 fetch_result = _run_git_with_retry(
                     ["git", "-C", tmpdir, "fetch", "--depth=1", repo, commit],
                     timeout=60,
+                    retry_prefix=prefix,
                 )
                 if fetch_result.returncode != 0:
                     err_msg = fetch_result.stderr.strip().replace('\n', ' ')
