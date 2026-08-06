@@ -7,7 +7,9 @@ without needing a MediaWiki install or network access.
 """
 
 import os
+import subprocess
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -342,9 +344,6 @@ class TestIsTransientGitError:
 
 # ── _run_git_with_retry ──────────────────────────────────────────────────────
 
-from unittest.mock import patch, MagicMock
-import subprocess
-
 
 def _make_result(returncode, stderr=""):
     """Create a fake subprocess.CompletedProcess."""
@@ -412,6 +411,7 @@ class TestRunGitWithRetry:
                 ["git", "fetch", "https://example.com"],
                 max_retries=3, _sleep_fn=lambda _: None,
             )
+        assert mock_run.call_count == 4
 
 
 # ── validate_commits retry integration ───────────────────────────────────────
@@ -475,7 +475,7 @@ class TestValidateCommitsRetry:
         # Ext1 ls-remote: transient (retried, fails) -> consecutive_transient = 1
         # Ext2 ls-remote: transient (retried, fails) -> consecutive_transient = 2
         # Ext3 ls-remote: transient (retried, fails) -> consecutive_transient = 3
-        # Ext4: skipped by circuit breaker without running
+        # Aborts immediately. Ext4 is never checked or even appended as a skipped entry.
         transient_error = _make_result(128, "fatal: unable to access '…': Could not resolve host")
         mock_run.return_value = transient_error
 
@@ -492,12 +492,43 @@ class TestValidateCommitsRetry:
         assert "Ext1" in failures[0]
         assert "Ext2" in failures[1]
         assert "Ext3" in failures[2]
-        assert "circuit-breaker" in failures[3]
-        assert "Ext4" in failures[3]
+        assert "Validation aborted" in failures[3]
+        assert "consecutive transient failures" in failures[3]
 
         # Ext1, Ext2, Ext3 are each checked 4 times (1 initial + 3 retries) -> 12 calls total.
         # Ext4 should not call subprocess.run at all.
         assert mock_run.call_count == 12
         # Each failed entry has 3 retries (thus 3 sleeps) -> 9 sleeps total.
         assert mock_sleep.call_count == 9
+
+    @pytest.mark.parametrize("stderr", [
+        "fatal: the remote end hung up unexpectedly",
+        "error: RPC failed; curl 18 transfer closed with outstanding read data remaining",
+        "fatal: early EOF",
+        "fatal: unable to access 'https://github.com/foo': Empty reply from server",
+        "fatal: unable to access 'https://github.com/foo': Error in the HTTP2 framing layer",
+    ])
+    def test_new_transient_patterns_match(self, stderr):
+        assert parse_yaml._is_transient_git_error(stderr) is True
+
+    @pytest.mark.parametrize("stderr", [
+        "fatal: couldn't find remote ref refs/heads/REL1_43 in .../mediawiki-extensions-TLSAuth",
+        "error: Server does not allow request for unadvertised object 1234abcd; ssl-cache",
+    ])
+    def test_ssl_tls_anchoring_false_positives(self, stderr):
+        assert parse_yaml._is_transient_git_error(stderr) is False
+
+    @patch("parse_yaml.subprocess.run")
+    def test_validate_commits_time_budget(self, mock_run):
+        mock_run.return_value = _make_result(0)
+        entries = [
+            self._entry(name="Ext1"),
+            self._entry(name="Ext2"),
+        ]
+        # Simulate time budget exceeded immediately
+        with patch("time.monotonic", side_effect=[0.0, 601.0, 602.0]):
+            failures = parse_yaml.validate_commits(entries)
+
+        assert len(failures) == 1
+        assert "exceeded total elapsed time limit of 600s" in failures[0]
 
