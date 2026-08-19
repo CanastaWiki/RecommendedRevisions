@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
@@ -286,124 +287,159 @@ def _run_git_with_retry(
             raise last_exception
 
 
-def validate_commits(entries: list[dict]) -> list[str]:
+def _validate_single_entry(e: dict) -> tuple[str, bool, str, bool]:
     """
-    Verify each pinned commit exists in its repository via git ls-remote.
+    Validate a single extension/skin entry.
+    Returns (name, is_success, failure_message, is_transient_failure).
+    """
+    repo = e.get("repository")
+    if not repo:
+        return e["name"], True, "", False
+
+    # Map Gerrit URL to GitHub mirror to avoid HTTP 429 rate limits in CI.
+    if repo.startswith("https://gerrit.wikimedia.org/r/mediawiki/"):
+        parts = repo.split("/")
+        if len(parts) >= 7:
+            kind = parts[5]  # 'extensions' or 'skins'
+            name_part = parts[6]
+            repo = f"https://github.com/wikimedia/mediawiki-{kind}-{name_part}"
+
+    commit = e["commit"]
+    name = e["name"]
+    branch = e.get("branch")
+    prefix = f"  Checking {name} ({commit[:12]})... "
+
+    try:
+        # First: verify the branch exists (if specified).
+        if branch:
+            result = _run_git_with_retry(
+                ["git", "ls-remote", "--exit-code", repo, f"refs/heads/{branch}"],
+                timeout=30,
+            )
+            if result.returncode != 0:
+                err_msg = result.stderr.strip().replace('\n', ' ')
+                is_transient = _is_transient_git_error(result.stderr)
+                msg = f"{name}: branch '{branch}' not found in {repo} (git error: {err_msg})"
+                return name, False, msg, is_transient
+
+        # Second: fetch the specific commit SHA.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subprocess.run(
+                ["git", "init", "--bare", tmpdir],
+                capture_output=True, check=True,
+            )
+            fetch_result = _run_git_with_retry(
+                ["git", "-C", tmpdir, "fetch", "--depth=1", repo, commit],
+                timeout=60,
+            )
+            if fetch_result.returncode != 0:
+                err_msg = fetch_result.stderr.strip().replace('\n', ' ')
+                is_transient = _is_transient_git_error(fetch_result.stderr)
+                msg = (
+                    f"{name}: commit {commit[:12]} not found in "
+                    f"{repo} (branch: {branch or 'default'}) (git error: {err_msg})"
+                )
+                return name, False, msg, is_transient
+            else:
+                return name, True, "OK", False
+    except subprocess.TimeoutExpired:
+        msg = f"{name}: timeout verifying commit {commit[:12]} against {repo}"
+        return name, False, msg, True
+    except Exception as exc:
+        msg = f"{name}: error verifying commit: {exc}"
+        return name, False, msg, False
+
+
+def validate_commits(entries: list[dict], max_workers: int = 16) -> list[str]:
+    """
+    Verify each pinned commit exists in its repository via git ls-remote and fetch.
     Returns a list of failure messages (empty = all good).
 
+    Runs in parallel using ThreadPoolExecutor for high performance.
     A circuit-breaker stops retrying after ``_CONSECUTIVE_TRANSIENT_LIMIT``
-    consecutive transient failures — at that point the remote is likely down
-    and retrying every subsequent entry would just waste CI time.
+    consecutive transient failures — at that point the remote is likely down.
     """
+    to_validate = [e for e in entries if not e.get("bundled") and e.get("commit") and e.get("repository")]
+    if not to_validate:
+        return []
+
     failures = []
     consecutive_transient = 0
     start_time = time.monotonic()
     max_elapsed_seconds = 600
 
-    for e in entries:
-        if e["bundled"] or not e.get("commit"):
-            continue
-        repo = e.get("repository")
-        if not repo:
-            continue
+    # Sequential execution fallback when max_workers == 1 (e.g. deterministic unit tests)
+    if max_workers == 1:
+        for e in to_validate:
+            if time.monotonic() - start_time > max_elapsed_seconds:
+                msg = f"Validation aborted: exceeded total elapsed time limit of {max_elapsed_seconds}s"
+                print(f"\n⚠️  {msg}", flush=True)
+                failures.append(msg)
+                break
 
-        # If it's a Gerrit URL, map it to the GitHub mirror to avoid HTTP 429 rate limits in CI.
-        # This keeps the actual metadata using Gerrit but does validation against the fast GitHub mirror.
-        if repo.startswith("https://gerrit.wikimedia.org/r/mediawiki/"):
-            parts = repo.split("/")
-            if len(parts) >= 7:
-                kind = parts[5]  # 'extensions' or 'skins'
-                name_part = parts[6]  # extension/skin name
-                repo = f"https://github.com/wikimedia/mediawiki-{kind}-{name_part}"
+            if consecutive_transient >= _CONSECUTIVE_TRANSIENT_LIMIT:
+                msg = f"Validation aborted after {consecutive_transient} consecutive transient failures — remote appears unreachable"
+                print(f"\n⚠️  {msg}", flush=True)
+                failures.append(msg)
+                break
 
-        commit = e["commit"]
-        name = e["name"]
-        branch = e.get("branch")
+            name = e["name"]
+            commit = e["commit"]
+            prefix = f"  Checking {name} ({commit[:12]})... "
+            print(prefix, end="", flush=True)
 
-        # Total elapsed budget check
-        if time.monotonic() - start_time > max_elapsed_seconds:
-            msg = f"Validation aborted: exceeded total elapsed time limit of {max_elapsed_seconds}s"
-            print(f"\n⚠️  {msg}", flush=True)
-            failures.append(msg)
-            break
-
-        # Circuit-breaker: if we've seen too many consecutive transient
-        # failures, the remote is down — stop retrying and fail fast.
-        if consecutive_transient >= _CONSECUTIVE_TRANSIENT_LIMIT:
-            msg = f"Validation aborted after {consecutive_transient} consecutive transient failures — remote appears unreachable"
-            print(f"\n⚠️  {msg}", flush=True)
-            failures.append(msg)
-            break
-
-        prefix = f"  Checking {name} ({commit[:12]})... "
-        print(f"  Checking {name} ({commit[:12]})...", end=" ", flush=True)
-
-        try:
-            # First: verify the branch exists (if specified).
-            if branch:
-                result = _run_git_with_retry(
-                    ["git", "ls-remote", "--exit-code", repo, f"refs/heads/{branch}"],
-                    timeout=30,
-                    retry_prefix=prefix,
-                )
-                if result.returncode != 0:
-                    err_msg = result.stderr.strip().replace('\n', ' ')
-                    if _is_transient_git_error(result.stderr):
-                        consecutive_transient += 1
-                    else:
-                        consecutive_transient = 0
-                    msg = f"{name}: branch '{branch}' not found in {repo} (git error: {err_msg})"
-                    print(f"FAIL (branch missing: {err_msg})")
-                    failures.append(msg)
-                    continue
-
-            # Second: try to find the commit.  ls-remote can't look up
-            # arbitrary SHAs directly, so we do a shallow clone check.
-            # For Gerrit repos, we can use the Gerrit REST API or just
-            # trust that if the branch exists, the commit is on it.
-            # For GitHub repos, we can use the API.
-            #
-            # Pragmatic approach: clone --depth=1 --branch, then verify
-            # the commit is an ancestor.  But that's slow for 170 repos.
-            #
-            # Fastest reliable approach: attempt a fetch of the specific SHA.
-            # If the server supports it, this works in one round-trip.
-            with tempfile.TemporaryDirectory() as tmpdir:
-                # Init a bare repo and try to fetch the exact commit.
-                subprocess.run(
-                    ["git", "init", "--bare", tmpdir],
-                    capture_output=True, check=True,
-                )
-                fetch_result = _run_git_with_retry(
-                    ["git", "-C", tmpdir, "fetch", "--depth=1", repo, commit],
-                    timeout=60,
-                    retry_prefix=prefix,
-                )
-                if fetch_result.returncode != 0:
-                    err_msg = fetch_result.stderr.strip().replace('\n', ' ')
-                    if _is_transient_git_error(fetch_result.stderr):
-                        consecutive_transient += 1
-                    else:
-                        consecutive_transient = 0
-                    msg = (
-                        f"{name}: commit {commit[:12]} not found in "
-                        f"{repo} (branch: {branch or 'default'}) (git error: {err_msg})"
-                    )
-                    print(f"FAIL ({err_msg})")
-                    failures.append(msg)
+            _, success, msg, is_transient = _validate_single_entry(e)
+            if success:
+                consecutive_transient = 0
+                print("OK", flush=True)
+            else:
+                if is_transient:
+                    consecutive_transient += 1
                 else:
                     consecutive_transient = 0
-                    print(f"OK")
-        except subprocess.TimeoutExpired:
-            consecutive_transient += 1
-            msg = f"{name}: timeout verifying commit {commit[:12]} against {repo}"
-            print(f"TIMEOUT")
-            failures.append(msg)
-        except Exception as exc:
-            consecutive_transient = 0
-            msg = f"{name}: error verifying commit: {exc}"
-            print(f"ERROR ({exc})")
-            failures.append(msg)
+                print(f"FAIL ({msg})", flush=True)
+                failures.append(msg)
+        return failures
+
+    # Parallel execution with ThreadPoolExecutor
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_entry = {executor.submit(_validate_single_entry, e): e for e in to_validate}
+        for future in concurrent.futures.as_completed(future_to_entry):
+            e = future_to_entry[future]
+            name = e["name"]
+            commit = e["commit"]
+
+            if time.monotonic() - start_time > max_elapsed_seconds:
+                msg = f"Validation aborted: exceeded total elapsed time limit of {max_elapsed_seconds}s"
+                print(f"\n⚠️  {msg}", flush=True)
+                failures.append(msg)
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
+
+            if consecutive_transient >= _CONSECUTIVE_TRANSIENT_LIMIT:
+                msg = f"Validation aborted after {consecutive_transient} consecutive transient failures — remote appears unreachable"
+                print(f"\n⚠️  {msg}", flush=True)
+                failures.append(msg)
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
+
+            try:
+                _, success, msg, is_transient = future.result()
+                if success:
+                    consecutive_transient = 0
+                    print(f"  Checking {name} ({commit[:12]})... OK", flush=True)
+                else:
+                    if is_transient:
+                        consecutive_transient += 1
+                    else:
+                        consecutive_transient = 0
+                    print(f"  Checking {name} ({commit[:12]})... FAIL ({msg})", flush=True)
+                    failures.append(msg)
+            except Exception as exc:
+                consecutive_transient = 0
+                err_msg = f"{name}: error verifying commit: {exc}"
+                print(f"  Checking {name} ({commit[:12]})... ERROR ({exc})", flush=True)
+                failures.append(err_msg)
 
     return failures
 

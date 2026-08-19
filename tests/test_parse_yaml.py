@@ -486,7 +486,7 @@ class TestValidateCommitsRetry:
             self._entry(name="Ext4"),
         ]
         with patch("time.sleep") as mock_sleep:
-            failures = parse_yaml.validate_commits(entries)
+            failures = parse_yaml.validate_commits(entries, max_workers=1)
 
         assert len(failures) == 4
         assert "Ext1" in failures[0]
@@ -527,8 +527,20 @@ class TestValidateCommitsRetry:
         ]
         # Simulate time budget exceeded immediately
         with patch("time.monotonic", side_effect=[0.0, 601.0, 602.0]):
-            failures = parse_yaml.validate_commits(entries)
+            failures = parse_yaml.validate_commits(entries, max_workers=1)
 
         assert len(failures) == 1
         assert "exceeded total elapsed time limit of 600s" in failures[0]
+
+    @patch("parse_yaml.subprocess.run")
+    def test_parallel_validate_commits(self, mock_run):
+        mock_run.return_value = _make_result(0)
+        entries = [
+            self._entry(name="Ext1"),
+            self._entry(name="Ext2"),
+            self._entry(name="Ext3"),
+        ]
+        failures = parse_yaml.validate_commits(entries, max_workers=4)
+        assert failures == []
+
 
