@@ -114,6 +114,10 @@ upstream_test_compat:
     reason: Requires onoi/cache library in isolated PHPUnit environment
   - name: SemanticDependencyUpdater
     reason: Dependency on SMW vendor libraries in isolated PHPUnit environment
+  - name: AntiSpoof
+    reason: Integration test suite errors under MediaWiki 1.43 / PHP 8.3
+  - name: TimedMediaHandler
+    reason: Integration test suite errors / FFmpeg dependencies under MediaWiki 1.43
 
 # ── Extensions with partial test exclusions ──────────────────────────────────
 # These extensions pass the vast majority of their test suite. Only a few
