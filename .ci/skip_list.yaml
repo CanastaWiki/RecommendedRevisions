@@ -108,6 +108,12 @@ upstream_test_compat:
     reason: Integration test suite errors / dependency on SMW test classes
   - name: SemanticScribunto
     reason: Integration test suite errors / dependency on SMW test classes
+  - name: OATHAuth
+    reason: Requires christian-riesen/base32 library in isolated PHPUnit environment
+  - name: SemanticMediaWiki
+    reason: Requires onoi/cache library in isolated PHPUnit environment
+  - name: SemanticDependencyUpdater
+    reason: Dependency on SMW vendor libraries in isolated PHPUnit environment
 
 # ── Extensions with partial test exclusions ──────────────────────────────────
 # These extensions pass the vast majority of their test suite. Only a few
