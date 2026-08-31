@@ -38,7 +38,7 @@ jobs:
   parse:
     name: Parse & Validate Commits
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
       coexistence_matrix: ${{ steps.coexistence.outputs.matrix }}
