@@ -403,7 +403,7 @@ extensions:
 - PageForms:
     Wikidata ID: Q21678466
     branch: master
-    commit: f8a9e6890e71b947a4779f6a45849ed43653b3f0 # v. 6.0.10
+    commit: 88ad8f1805a11bb1c693ddd9e5311b059593344f # v. 6.0.11
 - PageImages:
     Wikidata ID: Q21677945
     bundled: true
