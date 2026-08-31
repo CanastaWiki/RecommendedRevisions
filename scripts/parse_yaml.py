@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from collections import defaultdict
 
@@ -212,7 +213,7 @@ _TRANSIENT_PATTERNS = re.compile(
     r"Connection refused|"
     r"Network is unreachable|"
     r"the remote end hung up unexpectedly|"
-    r"RPC failed|"
+    r"RPC failed; (?:curl|result=)|"
     r"early EOF|"
     r"Empty reply from server|"
     r"Error in the HTTP2 framing layer",
@@ -222,9 +223,9 @@ _TRANSIENT_PATTERNS = re.compile(
 # Default retry parameters (overridable for testing).
 _RETRY_COUNT = 3
 _RETRY_BASE_DELAY = 2  # seconds; actual delay = base * 2^attempt
+_MAX_ELAPSED_SECONDS = 600
 
-# Circuit-breaker: after this many consecutive transient failures across
-# entries, stop retrying and fail fast (the remote is probably down).
+# Circuit-breaker: after this many transient failures across entries, stop retrying and fail fast.
 _CONSECUTIVE_TRANSIENT_LIMIT = 3
 
 
@@ -239,7 +240,8 @@ def _run_git_with_retry(
     timeout: int = 60,
     max_retries: int = _RETRY_COUNT,
     base_delay: float = _RETRY_BASE_DELAY,
-    retry_prefix: str | None = None,
+    entry_name: str | None = None,
+    abort_event: threading.Event | None = None,
     _sleep_fn=None,
 ) -> subprocess.CompletedProcess:
     """Run a git command, retrying on transient network errors with exponential backoff.
@@ -253,8 +255,14 @@ def _run_git_with_retry(
     if _sleep_fn is None:
         _sleep_fn = time.sleep
 
+    result = None
     last_exception = None
     for attempt in range(max_retries + 1):
+        if abort_event and abort_event.is_set():
+            if last_exception:
+                raise last_exception
+            return subprocess.CompletedProcess(args=cmd, returncode=128, stdout="", stderr="Aborted due to circuit breaker")
+
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
             if result.returncode == 0:
@@ -273,28 +281,80 @@ def _run_git_with_retry(
             last_exception = exc
 
         if is_transient and attempt < max_retries:
+            if abort_event and abort_event.is_set():
+                if last_exception:
+                    raise last_exception
+                return result
+
             delay = base_delay * (2 ** attempt)
-            print(f"\n  RETRY ({attempt + 1}/{max_retries}, "
-                  f"wait {delay}s: {err_details})", flush=True)
+            name_str = f" for {entry_name}" if entry_name else ""
+            print(f"\n  RETRY{name_str} ({attempt + 1}/{max_retries}, wait {delay}s: {err_details})", flush=True)
             _sleep_fn(delay)
-            if retry_prefix:
-                print(retry_prefix, end="", flush=True)
             continue
 
         if result is not None:
             return result
-        else:
+        elif last_exception is not None:
             raise last_exception
 
+    return result
 
-def _validate_single_entry(e: dict) -> tuple[str, bool, str, bool]:
+
+class ValidationContext:
+    def __init__(self, total_count: int):
+        self.total_count = total_count
+        self.validated_count = 0
+        self.transient_count = 0
+        self.abort_event = threading.Event()
+        self.lock = threading.Lock()
+        self.start_time = time.monotonic()
+        self.abort_msg = ""
+
+    def record_result(self, is_success: bool, is_transient: bool):
+        with self.lock:
+            self.validated_count += 1
+            if not is_success and is_transient:
+                self.transient_count += 1
+                if self.transient_count >= _CONSECUTIVE_TRANSIENT_LIMIT and not self.abort_event.is_set():
+                    self.abort_event.set()
+                    unvalidated = self.total_count - self.validated_count
+                    self.abort_msg = (
+                        f"Validation aborted after {self.transient_count} transient failures "
+                        f"({unvalidated} of {self.total_count} entries unvalidated) — remote appears unreachable"
+                    )
+
+    def check_time_budget(self) -> bool:
+        if time.monotonic() - self.start_time > _MAX_ELAPSED_SECONDS:
+            with self.lock:
+                if not self.abort_event.is_set():
+                    self.abort_event.set()
+                    unvalidated = self.total_count - self.validated_count
+                    self.abort_msg = (
+                        f"Validation aborted: exceeded total elapsed time limit of {_MAX_ELAPSED_SECONDS}s "
+                        f"({unvalidated} of {self.total_count} entries unvalidated)"
+                    )
+            return True
+        return False
+
+
+def _validate_single_entry(
+    e: dict,
+    ctx: ValidationContext | None = None,
+    _sleep_fn=None,
+) -> tuple[str, bool, str, bool, bool]:
     """
     Validate a single extension/skin entry.
-    Returns (name, is_success, failure_message, is_transient_failure).
+    Returns (name, is_success, failure_message, is_transient_failure, is_aborted).
     """
+    name = e["name"]
+    if ctx and (ctx.abort_event.is_set() or ctx.check_time_budget()):
+        return name, False, "Aborted", False, True
+
     repo = e.get("repository")
     if not repo:
-        return e["name"], True, "", False
+        if ctx:
+            ctx.record_result(True, False)
+        return name, True, "", False, False
 
     # Map Gerrit URL to GitHub mirror to avoid HTTP 429 rate limits in CI.
     if repo.startswith("https://gerrit.wikimedia.org/r/mediawiki/"):
@@ -305,22 +365,34 @@ def _validate_single_entry(e: dict) -> tuple[str, bool, str, bool]:
             repo = f"https://github.com/wikimedia/mediawiki-{kind}-{name_part}"
 
     commit = e["commit"]
-    name = e["name"]
     branch = e.get("branch")
-    prefix = f"  Checking {name} ({commit[:12]})... "
+    abort_event = ctx.abort_event if ctx else None
 
     try:
+        if ctx and (ctx.abort_event.is_set() or ctx.check_time_budget()):
+            return name, False, "Aborted", False, True
+
         # First: verify the branch exists (if specified).
         if branch:
             result = _run_git_with_retry(
                 ["git", "ls-remote", "--exit-code", repo, f"refs/heads/{branch}"],
                 timeout=30,
+                entry_name=name,
+                abort_event=abort_event,
+                _sleep_fn=_sleep_fn,
             )
+            if abort_event and abort_event.is_set():
+                return name, False, "Aborted", False, True
             if result.returncode != 0:
                 err_msg = result.stderr.strip().replace('\n', ' ')
                 is_transient = _is_transient_git_error(result.stderr)
                 msg = f"{name}: branch '{branch}' not found in {repo} (git error: {err_msg})"
-                return name, False, msg, is_transient
+                if ctx:
+                    ctx.record_result(False, is_transient)
+                return name, False, msg, is_transient, False
+
+        if ctx and (ctx.abort_event.is_set() or ctx.check_time_budget()):
+            return name, False, "Aborted", False, True
 
         # Second: fetch the specific commit SHA.
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -331,7 +403,12 @@ def _validate_single_entry(e: dict) -> tuple[str, bool, str, bool]:
             fetch_result = _run_git_with_retry(
                 ["git", "-C", tmpdir, "fetch", "--depth=1", repo, commit],
                 timeout=60,
+                entry_name=name,
+                abort_event=abort_event,
+                _sleep_fn=_sleep_fn,
             )
+            if abort_event and abort_event.is_set():
+                return name, False, "Aborted", False, True
             if fetch_result.returncode != 0:
                 err_msg = fetch_result.stderr.strip().replace('\n', ' ')
                 is_transient = _is_transient_git_error(fetch_result.stderr)
@@ -339,107 +416,78 @@ def _validate_single_entry(e: dict) -> tuple[str, bool, str, bool]:
                     f"{name}: commit {commit[:12]} not found in "
                     f"{repo} (branch: {branch or 'default'}) (git error: {err_msg})"
                 )
-                return name, False, msg, is_transient
+                if ctx:
+                    ctx.record_result(False, is_transient)
+                return name, False, msg, is_transient, False
             else:
-                return name, True, "OK", False
+                if ctx:
+                    ctx.record_result(True, False)
+                return name, True, "OK", False, False
     except subprocess.TimeoutExpired:
         msg = f"{name}: timeout verifying commit {commit[:12]} against {repo}"
-        return name, False, msg, True
+        if ctx:
+            ctx.record_result(False, True)
+        return name, False, msg, True, False
     except Exception as exc:
         msg = f"{name}: error verifying commit: {exc}"
-        return name, False, msg, False
+        if ctx:
+            ctx.record_result(False, False)
+        return name, False, msg, False, False
 
 
-def validate_commits(entries: list[dict], max_workers: int = 16) -> list[str]:
+def validate_commits(entries: list[dict], max_workers: int = 16, _sleep_fn=None) -> list[str]:
     """
     Verify each pinned commit exists in its repository via git ls-remote and fetch.
     Returns a list of failure messages (empty = all good).
 
     Runs in parallel using ThreadPoolExecutor for high performance.
     A circuit-breaker stops retrying after ``_CONSECUTIVE_TRANSIENT_LIMIT``
-    consecutive transient failures — at that point the remote is likely down.
+    transient failures — at that point the remote is likely down.
     """
     to_validate = [e for e in entries if not e.get("bundled") and e.get("commit") and e.get("repository")]
     if not to_validate:
         return []
 
     failures = []
-    consecutive_transient = 0
-    start_time = time.monotonic()
-    max_elapsed_seconds = 600
+    ctx = ValidationContext(len(to_validate))
+    abort_reported = False
 
-    # Sequential execution fallback when max_workers == 1 (e.g. deterministic unit tests)
-    if max_workers == 1:
-        for e in to_validate:
-            if time.monotonic() - start_time > max_elapsed_seconds:
-                msg = f"Validation aborted: exceeded total elapsed time limit of {max_elapsed_seconds}s"
-                print(f"\n⚠️  {msg}", flush=True)
-                failures.append(msg)
-                break
-
-            if consecutive_transient >= _CONSECUTIVE_TRANSIENT_LIMIT:
-                msg = f"Validation aborted after {consecutive_transient} consecutive transient failures — remote appears unreachable"
-                print(f"\n⚠️  {msg}", flush=True)
-                failures.append(msg)
-                break
-
-            name = e["name"]
-            commit = e["commit"]
-            prefix = f"  Checking {name} ({commit[:12]})... "
-            print(prefix, end="", flush=True)
-
-            _, success, msg, is_transient = _validate_single_entry(e)
-            if success:
-                consecutive_transient = 0
-                print("OK", flush=True)
-            else:
-                if is_transient:
-                    consecutive_transient += 1
-                else:
-                    consecutive_transient = 0
-                print(f"FAIL ({msg})", flush=True)
-                failures.append(msg)
-        return failures
-
-    # Parallel execution with ThreadPoolExecutor
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_entry = {executor.submit(_validate_single_entry, e): e for e in to_validate}
+        future_to_entry = {
+            executor.submit(_validate_single_entry, e, ctx, _sleep_fn): e
+            for e in to_validate
+        }
+
         for future in concurrent.futures.as_completed(future_to_entry):
             e = future_to_entry[future]
             name = e["name"]
             commit = e["commit"]
 
-            if time.monotonic() - start_time > max_elapsed_seconds:
-                msg = f"Validation aborted: exceeded total elapsed time limit of {max_elapsed_seconds}s"
-                print(f"\n⚠️  {msg}", flush=True)
-                failures.append(msg)
-                executor.shutdown(wait=False, cancel_futures=True)
-                break
-
-            if consecutive_transient >= _CONSECUTIVE_TRANSIENT_LIMIT:
-                msg = f"Validation aborted after {consecutive_transient} consecutive transient failures — remote appears unreachable"
-                print(f"\n⚠️  {msg}", flush=True)
-                failures.append(msg)
-                executor.shutdown(wait=False, cancel_futures=True)
-                break
-
             try:
-                _, success, msg, is_transient = future.result()
+                _, success, msg, is_transient, is_aborted = future.result()
+                if is_aborted:
+                    continue
+
                 if success:
-                    consecutive_transient = 0
                     print(f"  Checking {name} ({commit[:12]})... OK", flush=True)
                 else:
-                    if is_transient:
-                        consecutive_transient += 1
-                    else:
-                        consecutive_transient = 0
                     print(f"  Checking {name} ({commit[:12]})... FAIL ({msg})", flush=True)
                     failures.append(msg)
+
+                if ctx.abort_event.is_set() and not abort_reported:
+                    abort_reported = True
+                    print(f"\n⚠️  {ctx.abort_msg}", flush=True)
+                    failures.append(ctx.abort_msg)
+                    executor.shutdown(wait=False, cancel_futures=True)
+
             except Exception as exc:
-                consecutive_transient = 0
                 err_msg = f"{name}: error verifying commit: {exc}"
                 print(f"  Checking {name} ({commit[:12]})... ERROR ({exc})", flush=True)
                 failures.append(err_msg)
+
+    if ctx.abort_event.is_set() and not abort_reported:
+        print(f"\n⚠️  {ctx.abort_msg}", flush=True)
+        failures.append(ctx.abort_msg)
 
     return failures
 
@@ -799,5 +847,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-# End of file
-

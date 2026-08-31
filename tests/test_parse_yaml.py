@@ -468,14 +468,10 @@ class TestValidateCommitsRetry:
         # Should have called subprocess.run only once for the ls-remote command
         assert mock_run.call_count == 1
 
+    @pytest.mark.parametrize("workers", [1, 4])
     @patch("parse_yaml.subprocess.run")
-    def test_circuit_breaker_stops_retries(self, mock_run):
+    def test_circuit_breaker_stops_retries(self, mock_run, workers):
         """After _CONSECUTIVE_TRANSIENT_LIMIT transient failures, subsequent checks skip immediately."""
-        # 3 consecutive transient failures across different entries:
-        # Ext1 ls-remote: transient (retried, fails) -> consecutive_transient = 1
-        # Ext2 ls-remote: transient (retried, fails) -> consecutive_transient = 2
-        # Ext3 ls-remote: transient (retried, fails) -> consecutive_transient = 3
-        # Aborts immediately. Ext4 is never checked or even appended as a skipped entry.
         transient_error = _make_result(128, "fatal: unable to access '…': Could not resolve host")
         mock_run.return_value = transient_error
 
@@ -485,21 +481,22 @@ class TestValidateCommitsRetry:
             self._entry(name="Ext3"),
             self._entry(name="Ext4"),
         ]
-        with patch("time.sleep") as mock_sleep:
-            failures = parse_yaml.validate_commits(entries, max_workers=1)
+        sleep_calls = []
+        failures = parse_yaml.validate_commits(entries, max_workers=workers, _sleep_fn=sleep_calls.append)
 
         assert len(failures) == 4
-        assert "Ext1" in failures[0]
-        assert "Ext2" in failures[1]
-        assert "Ext3" in failures[2]
-        assert "Validation aborted" in failures[3]
-        assert "consecutive transient failures" in failures[3]
+        failed_entry_msgs = [f for f in failures if "branch 'REL1_43' not found" in f]
+        assert len(failed_entry_msgs) == 3
+        abort_msgs = [f for f in failures if "Validation aborted" in f]
+        assert len(abort_msgs) == 1
+        assert "transient failures" in abort_msgs[0]
+        assert "(1 of 4 entries unvalidated)" in abort_msgs[0]
 
-        # Ext1, Ext2, Ext3 are each checked 4 times (1 initial + 3 retries) -> 12 calls total.
-        # Ext4 should not call subprocess.run at all.
-        assert mock_run.call_count == 12
-        # Each failed entry has 3 retries (thus 3 sleeps) -> 9 sleeps total.
-        assert mock_sleep.call_count == 9
+        if workers == 1:
+            # Ext1, Ext2, Ext3 are each checked 4 times (1 initial + 3 retries) -> 12 calls total.
+            # Ext4 should not call subprocess.run at all.
+            assert mock_run.call_count == 12
+            assert len(sleep_calls) == 9
 
     @pytest.mark.parametrize("stderr", [
         "fatal: the remote end hung up unexpectedly",
@@ -514,23 +511,30 @@ class TestValidateCommitsRetry:
     @pytest.mark.parametrize("stderr", [
         "fatal: couldn't find remote ref refs/heads/REL1_43 in .../mediawiki-extensions-TLSAuth",
         "error: Server does not allow request for unadvertised object 1234abcd; ssl-cache",
+        "error: RPC failed; HTTP 404 curl 22",
     ])
     def test_ssl_tls_anchoring_false_positives(self, stderr):
         assert parse_yaml._is_transient_git_error(stderr) is False
 
+    @pytest.mark.parametrize("workers", [1, 4])
     @patch("parse_yaml.subprocess.run")
-    def test_validate_commits_time_budget(self, mock_run):
+    def test_validate_commits_time_budget(self, mock_run, workers):
         mock_run.return_value = _make_result(0)
         entries = [
             self._entry(name="Ext1"),
             self._entry(name="Ext2"),
         ]
-        # Simulate time budget exceeded immediately
-        with patch("time.monotonic", side_effect=[0.0, 601.0, 602.0]):
-            failures = parse_yaml.validate_commits(entries, max_workers=1)
+        def mock_clock():
+            mock_clock.now += 700.0
+            return mock_clock.now
+        mock_clock.now = 0.0
+
+        with patch("time.monotonic", side_effect=mock_clock):
+            failures = parse_yaml.validate_commits(entries, max_workers=workers)
 
         assert len(failures) == 1
         assert "exceeded total elapsed time limit of 600s" in failures[0]
+        assert "entries unvalidated" in failures[0]
 
     @patch("parse_yaml.subprocess.run")
     def test_parallel_validate_commits(self, mock_run):
