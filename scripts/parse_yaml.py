@@ -271,7 +271,7 @@ def _run_git_with_retry(
             # Non-zero exit — decide whether to retry.
             stderr_to_check = result.stderr
             is_transient = _is_transient_git_error(stderr_to_check)
-            err_details = stderr_to_check.strip()[:80]
+            err_details = " ".join(stderr_to_check.split())[:80]
         except subprocess.TimeoutExpired as exc:
             if attempt >= max_retries:
                 raise
@@ -319,9 +319,11 @@ class ValidationContext:
                     self.abort_event.set()
                     unvalidated = self.total_count - self.validated_count
                     self.abort_msg = (
-                        f"Validation aborted after {self.transient_count} transient failures "
+                        f"Validation aborted after {self.transient_count} consecutive transient failures "
                         f"({unvalidated} of {self.total_count} entries unvalidated) — remote appears unreachable"
                     )
+            else:
+                self.transient_count = 0
 
     def check_time_budget(self) -> bool:
         if time.monotonic() - self.start_time > _MAX_ELAPSED_SECONDS:
@@ -442,7 +444,7 @@ def validate_commits(entries: list[dict], max_workers: int = 16, _sleep_fn=None)
 
     Runs in parallel using ThreadPoolExecutor for high performance.
     A circuit-breaker stops retrying after ``_CONSECUTIVE_TRANSIENT_LIMIT``
-    transient failures — at that point the remote is likely down.
+    consecutive transient failures — at that point the remote is likely down.
     """
     to_validate = [e for e in entries if not e.get("bundled") and e.get("commit") and e.get("repository")]
     if not to_validate:
@@ -453,37 +455,62 @@ def validate_commits(entries: list[dict], max_workers: int = 16, _sleep_fn=None)
     abort_reported = False
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_entry = {
-            executor.submit(_validate_single_entry, e, ctx, _sleep_fn): e
-            for e in to_validate
-        }
+        futures = {}
+        entries_iter = iter(to_validate)
 
-        for future in concurrent.futures.as_completed(future_to_entry):
-            e = future_to_entry[future]
-            name = e["name"]
-            commit = e["commit"]
-
+        def submit_next():
+            if ctx.abort_event.is_set() or ctx.check_time_budget():
+                return False
             try:
-                _, success, msg, is_transient, is_aborted = future.result()
-                if is_aborted:
+                entry = next(entries_iter)
+            except StopIteration:
+                return False
+            fut = executor.submit(_validate_single_entry, entry, ctx, _sleep_fn)
+            futures[fut] = entry
+            return True
+
+        # Pre-fill worker slots up to max_workers
+        for _ in range(max_workers):
+            if not submit_next():
+                break
+
+        while futures:
+            done, _ = concurrent.futures.wait(
+                futures.keys(),
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            for future in done:
+                e = futures.pop(future)
+                name = e["name"]
+                commit = e["commit"]
+
+                try:
+                    _, success, msg, is_transient, is_aborted = future.result()
+                    if is_aborted:
+                        continue
+
+                    if success:
+                        print(f"  Checking {name} ({commit[:12]})... OK", flush=True)
+                    else:
+                        print(f"  Checking {name} ({commit[:12]})... FAIL ({msg})", flush=True)
+                        failures.append(msg)
+
+                    if ctx.abort_event.is_set() and not abort_reported:
+                        abort_reported = True
+                        print(f"\n⚠️  {ctx.abort_msg}", flush=True)
+                        failures.append(ctx.abort_msg)
+                        executor.shutdown(wait=False, cancel_futures=True)
+
+                except concurrent.futures.CancelledError:
                     continue
+                except Exception as exc:
+                    err_msg = f"{name}: error verifying commit: {exc}"
+                    print(f"  Checking {name} ({commit[:12]})... ERROR ({exc})", flush=True)
+                    failures.append(err_msg)
 
-                if success:
-                    print(f"  Checking {name} ({commit[:12]})... OK", flush=True)
-                else:
-                    print(f"  Checking {name} ({commit[:12]})... FAIL ({msg})", flush=True)
-                    failures.append(msg)
-
-                if ctx.abort_event.is_set() and not abort_reported:
-                    abort_reported = True
-                    print(f"\n⚠️  {ctx.abort_msg}", flush=True)
-                    failures.append(ctx.abort_msg)
-                    executor.shutdown(wait=False, cancel_futures=True)
-
-            except Exception as exc:
-                err_msg = f"{name}: error verifying commit: {exc}"
-                print(f"  Checking {name} ({commit[:12]})... ERROR ({exc})", flush=True)
-                failures.append(err_msg)
+                # Submit next task only if abort has not been triggered
+                if not ctx.abort_event.is_set() and not ctx.check_time_budget():
+                    submit_next()
 
     if ctx.abort_event.is_set() and not abort_reported:
         print(f"\n⚠️  {ctx.abort_msg}", flush=True)

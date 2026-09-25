@@ -9,10 +9,9 @@ without needing a MediaWiki install or network access.
 import os
 import subprocess
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
@@ -471,7 +470,7 @@ class TestValidateCommitsRetry:
     @pytest.mark.parametrize("workers", [1, 4])
     @patch("parse_yaml.subprocess.run")
     def test_circuit_breaker_stops_retries(self, mock_run, workers):
-        """After _CONSECUTIVE_TRANSIENT_LIMIT transient failures, subsequent checks skip immediately."""
+        """After _CONSECUTIVE_TRANSIENT_LIMIT consecutive transient failures, remaining checks are aborted or cancelled."""
         transient_error = _make_result(128, "fatal: unable to access '…': Could not resolve host")
         mock_run.return_value = transient_error
 
@@ -497,6 +496,42 @@ class TestValidateCommitsRetry:
             # Ext4 should not call subprocess.run at all.
             assert mock_run.call_count == 12
             assert len(sleep_calls) == 9
+
+    @patch("parse_yaml.subprocess.run")
+    def test_circuit_breaker_resets_on_success(self, mock_run):
+        """Interleaved transient failures and successes should not trip the consecutive circuit breaker."""
+        transient_error = _make_result(128, "fatal: unable to access '…': Could not resolve host")
+        success = _make_result(0)
+
+        # Sequence of runs: Ext1 fails, Ext2 succeeds, Ext3 fails, Ext4 succeeds, Ext5 fails.
+        # Total transient failures = 3, but never consecutive >= 3.
+        # Ext1 ls-remote (1 initial + 3 retries = 4) -> fails
+        # Ext2 ls-remote (1) + git init (1) + fetch (1) -> success
+        # Ext3 ls-remote (4) -> fails
+        # Ext4 ls-remote (1) + git init (1) + fetch (1) -> success
+        # Ext5 ls-remote (4) -> fails
+        mock_run.side_effect = [
+            transient_error, transient_error, transient_error, transient_error,  # Ext1
+            success, success, success,  # Ext2
+            transient_error, transient_error, transient_error, transient_error,  # Ext3
+            success, success, success,  # Ext4
+            transient_error, transient_error, transient_error, transient_error,  # Ext5
+        ]
+
+        entries = [
+            self._entry(name="Ext1"),
+            self._entry(name="Ext2"),
+            self._entry(name="Ext3"),
+            self._entry(name="Ext4"),
+            self._entry(name="Ext5"),
+        ]
+        sleep_calls = []
+        failures = parse_yaml.validate_commits(entries, max_workers=1, _sleep_fn=sleep_calls.append)
+
+        # Should NOT have any abort message
+        abort_msgs = [f for f in failures if "Validation aborted" in f]
+        assert len(abort_msgs) == 0
+        assert len(failures) == 3
 
     @pytest.mark.parametrize("stderr", [
         "fatal: the remote end hung up unexpectedly",
