@@ -15,10 +15,10 @@ extensions:
     commit: 92f1e05e2458368ad7a8477b2d84acfc99c36026 # v. 0.7.1
 - AdvancedSearch:
     Wikidata ID: Q21676196
-    commit: d879c5105bbdc574d6c7e95fa4cd20d7b6de6dcd
+    commit: 37a694b0de2086e2c5e1a4be3e26cf18c90c44f8
 - AJAXPoll:
     Wikidata ID: Q21676062
-    commit: fbfd07ef43063e806026d5bd3f95493e2b189378
+    commit: d064089066679d789cb513cf8accdc57b51b5278
 - AntiSpoof:
     Wikidata ID: Q21676294
     commit: a010c2d53618aa99b8b8a32d9665de9000e53188
@@ -80,12 +80,12 @@ extensions:
     commit: ee7b17910ece1ebaf6ad53857926d797b0ff374d
 - CheckUser:
     Wikidata ID: Q21676386
-    commit: 1de925985d764b50f80c08bd473a23312435bdae
+    commit: 78589958bffec94d89ecd887f97389ad2aee8af7
     additional steps:
     - database update
 - CirrusSearch:
     Wikidata ID: Q21676498
-    commit: 3461fc8daae0f1d8e555d1d1da21d6a76d836b3b
+    commit: 2a27e7505a06d84ca6efb094d86fc41ea2766e1b
     additional steps:
     - composer update
 - Cite:
@@ -107,7 +107,7 @@ extensions:
     commit: da01975ea050fe20ea80ff6728bbe0a7a2090c78
 - Collection:
     Wikidata ID: Q134413164
-    commit: f5f15ade19be8d5f07518d335be9a7047b6b7437
+    commit: 5cde1682153e972f73a9ab04b5b3b8416e5bb47e
 - CommentStreams:
     Wikidata ID: Q25662100
     commit: 23e8579bcbd4e7263836f2105d15fa7ef431f98e
@@ -115,10 +115,10 @@ extensions:
     - database update
 - CommonsMetadata:
     Wikidata ID: Q21676600
-    commit: 133fd7511eff158456e194315e5f477166ef3206
+    commit: e0f6d3dae608e011201f5585d8daa1c6b62d50ab
 - ConfirmAccount:
     Wikidata ID: Q21676649
-    commit: dc1a1db096f4ecadfe178fccd26a1b7a854254ad
+    commit: 6fee556c230e5575570281b9cdd730467f6757f6
     additional steps:
     - database update
 - ConfirmEdit:
@@ -205,7 +205,7 @@ extensions:
     Wikidata ID: Q123153544
     repository: https://github.com/StarCitizenWiki/mediawiki-extensions-EmbedVideo
     branch: master
-    commit: 6982ef6e10a8327a6ecc97eb036f4eb531a6f830 # v. 4.1.0
+    commit: d0aa2a3245c1308362b2ce77df1f6bb3e2bf6579 # v. 4.2.0
 - EventLogging:
     Wikidata ID: Q21676443
     commit: 411fc0d6c8538b0064e0d75b5302534c7f28ac50
@@ -322,12 +322,13 @@ extensions:
 - Maps:
     Wikidata ID: Q21677553
     repository: https://github.com/ProfessionalWiki/Maps
-    commit: 42faa03514e20068247e49c94e65550a0d241228 # v. 13.0.1
+    branch: 13.1.x
+    commit: 0ad7a624541c0fedb18a95a1c23ab70775371282 # v. 13.1.2
     additional steps:
     - composer update
 - MassMessage:
     Wikidata ID: Q27887618
-    commit: 798cbd5d4e1099aeba97c2c7e1b05fdb01882292
+    commit: c782c57b199a68344f213185427d5e2ccabb1fad
 - MassMessageEmail:
     Wikidata ID: Q35256649
     commit: b2d7a0441ce18e7d63532f4e46ac99a99c27718e
@@ -358,7 +359,7 @@ extensions:
     - MinervaNeue
 - MsUpload:
     Wikidata ID: Q21677697
-    commit: 039b6aece443d6d030e187c112ab2520a65915b2
+    commit: 532b700311ab7768c2567d6024dec165ddf780f2
 - MultimediaViewer:
     Wikidata ID: Q21677703
     bundled: true
@@ -557,7 +558,7 @@ extensions:
     bundled: true
 - TemplateSandbox:
     Wikidata ID: Q21678839
-    commit: db217336a3e2c455c5e24303b2e793623b80a055
+    commit: 25b02c368e373333f87fc6a394076e103da63635
 - TemplateStyles:
     Wikidata ID: Q25916623
     commit: daad80e73caa4e9f5b538361a155f933c33d50c2
@@ -592,16 +593,16 @@ extensions:
     bundled: true
 - TitleIcon:
     Wikidata ID: Q21678880
-    commit: 6e0b6a3ddba40c468d904d8587945092ad3f8030
+    commit: e9b5708242974086b8eccd4bdbbcbce19b6be88b
 - TwoColConflict:
     Wikidata ID: Q26991353
-    commit: 377a8f2fd7b87a89354dc08e373d4e2b6d476211
+    commit: a36e0456a7e38b61051e96b9f2eb72c440d10d48
 - UniversalLanguageSelector:
     Wikidata ID: Q21678941
     commit: 11c95712a05fd8feee7d148c5a2b882b92984bba
 - UploadWizard:
     Wikidata ID: Q11083660
-    commit: 0dd1f57172e82c18d7e8580c42eebe27c23e688a
+    commit: 2bd234e5997ae0d455300911faa89fe611b21ef0
 - UrlGetParameters:
     Wikidata ID: Q21678958
     commit: 013427509ca51a710879c8811b6f4ef04d7b2e12
@@ -667,7 +668,7 @@ extensions:
     bundled: true
 - WikiSEO:
     Wikidata ID: Q21679286
-    commit: 86611359bfc639beb1b567d7df0edf25a0441aa0
+    commit: b66ac6f99666244402e025c757beeb38c195d631
     required extensions:
     - PageImages
 - WSOAuth:
@@ -705,7 +706,7 @@ skins:
     commit: f6b35ca2b8b07ced0e467d8b99421a41b0af3fa3
 - Refreshed:
     Wikidata ID: Q22713061
-    commit: 2570c3ee3996cd8ca3f766131b301c33695f68e6
+    commit: 0d0c6d6f49b7103347ce61ad977e0db644f5d1a8
 - Timeless:
     Wikidata ID: Q22713093
     bundled: true

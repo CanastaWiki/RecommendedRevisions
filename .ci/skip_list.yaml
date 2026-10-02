@@ -130,6 +130,10 @@ partial_test_compat:
     reason: CargoFeedFormatTest expects old heading HTML; MW 1.43 changed heading markup
     exclude_tests:
       - tests/phpunit/integration/formats/CargoFeedFormatTest.php
+  - name: EmbedVideo
+    reason: AudioHandlerTest expects an empty makeParamString(); 4.2.0 returns a width prefix
+    exclude_tests:
+      - tests/phpunit/Media/AudioHandlerTest.php
   - name: PageForms
     reason: PFHelperFormActionTest references removed MediaWiki\Skin\SkinTemplate class; PFFormLinkerTest has environment-dependent assertion
     exclude_tests:
