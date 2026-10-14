@@ -82,6 +82,7 @@ extensions:
     Wikidata ID: Q21676386
     commit: 78589958bffec94d89ecd887f97389ad2aee8af7
     additional steps:
+    - composer update
     - database update
 - CirrusSearch:
     Wikidata ID: Q21676498
@@ -263,6 +264,7 @@ extensions:
     branch: master
     commit: 5f9f76ad0c4d11f7bc1728be564c84cdf70d6d6f # v. 2.1.1
     additional steps:
+    - composer update
     - database update
     required extensions:
     - PluggableAuth
@@ -379,6 +381,8 @@ extensions:
 - OAuth:
     Wikidata ID: Q21677849
     commit: 2deadfa73ad7897e7f3ac6965a5ccefa09c61f6d
+    additional steps:
+    - composer update
 - OpenGraphMeta:
     Wikidata ID: Q21677897
     commit: cb990fcea3b7827f02bcc328e367a7b2387a32a3
