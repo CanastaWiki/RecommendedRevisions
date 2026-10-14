@@ -228,11 +228,6 @@ extensions:
 - GlobalNotice:
     Wikidata ID: Q21677217
     commit: 0cc66c56ebcfdebc0d407d82ae584a5426523d9f
-- GoogleAnalyticsMetrics:
-    Wikidata ID: Q21677376
-    commit: 441511d7c848f8b59a08dc160fb1062f67778032
-    additional steps:
-    - composer update
 - GoogleDocCreator:
     Wikidata ID: Q56031068
     commit: 9db568cb4113ab99919fcb2e107e3428212f6ee1
