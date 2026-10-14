@@ -261,7 +261,7 @@ extensions:
 - JWTAuth:
     Wikidata ID: Q123281437
     branch: master
-    commit: 1649b7a2baeaf996caf2de463d6004807e26748d # v. 2.1.0
+    commit: 5f9f76ad0c4d11f7bc1728be564c84cdf70d6d6f # v. 2.1.1
     additional steps:
     - database update
     required extensions:
