@@ -150,7 +150,7 @@ extensions:
 - DataTransfer:
     Wikidata ID: Q21677041
     branch: master
-    commit: a512e20daa4a2eb9b33b80a9cf76f0a8d91336b4 # v. 1.8.1
+    commit: 3716d213c47ce71c1adc80833e20a23a434bc358 # v. 1.8.3
     additional steps:
     - composer update
 - DeleteBatch:
@@ -216,7 +216,7 @@ extensions:
 - ExternalData:
     Wikidata ID: Q21676576
     branch: master
-    commit: 5be63b028177a2a4207d063c54a0b6272f79209a # v. 3.7
+    commit: 76e024a9cba18173f5e706e855ecc4cec1459b39 # v. 3.7.1
     additional steps:
     - database update
 - FlexDiagrams:
