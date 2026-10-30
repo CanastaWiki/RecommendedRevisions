@@ -629,7 +629,7 @@ extensions:
 - VEForAll:
     Wikidata ID: Q51067113
     branch: master
-    commit: 33b5fa746af51e9c6c770950a197b1c17f5ee253 # v. 0.6
+    commit: e78bcde46752b598186dc0921454c205dd6aea54 # v. 0.8.1
     required extensions:
     - VisualEditor
 - VisualEditor:
