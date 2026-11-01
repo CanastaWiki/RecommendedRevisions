@@ -18,6 +18,7 @@ import pin_updates  # noqa: E402
 SHA_A = "a" * 40
 SHA_B = "b" * 40
 SHA_C = "c" * 40
+WEB = "https://github.com/example/ext"
 
 
 # ── is_noise ─────────────────────────────────────────────────────────────────
@@ -85,18 +86,22 @@ def test_is_major_bump(old, new, expected):
     assert pin_updates.is_major_bump(old, new) is expected
 
 
-def test_compare_url_uses_github_mirror_for_gerrit():
+def test_web_url_uses_github_mirror_for_gerrit():
     entry = {"name": "Cargo", "kind": "extension",
              "repository": "https://gerrit.wikimedia.org/r/mediawiki/extensions/Cargo"}
-    assert pin_updates.compare_url(entry, "old", "new") == \
-        "https://github.com/wikimedia/mediawiki-extensions-Cargo/compare/old...new"
+    assert pin_updates.web_url(entry) == \
+        "https://github.com/wikimedia/mediawiki-extensions-Cargo"
 
 
-def test_compare_url_for_github_repo():
+def test_web_url_for_github_repo():
     entry = {"name": "AWS", "kind": "extension",
-             "repository": "https://github.com/edwardspec/mediawiki-aws-s3"}
-    assert pin_updates.compare_url(entry, "o", "n") == \
-        "https://github.com/edwardspec/mediawiki-aws-s3/compare/o...n"
+             "repository": "https://github.com/edwardspec/mediawiki-aws-s3.git"}
+    assert pin_updates.web_url(entry) == "https://github.com/edwardspec/mediawiki-aws-s3"
+
+
+def test_web_url_for_other_hosts_is_none():
+    entry = {"name": "X", "kind": "extension", "repository": "https://example.com/x.git"}
+    assert pin_updates.web_url(entry) is None
 
 
 # ── rendering and parsing the issue body ─────────────────────────────────────
@@ -105,7 +110,7 @@ def candidate(name, category, new=SHA_B, tagged=True, kind="extension"):
     return {
         "kind": kind, "name": name, "branch": "master", "old": SHA_A, "new": new,
         "old_version": "1.0", "new_version": "2.0" if category == "major" else "1.1",
-        "tagged": tagged, "category": category, "compare": None,
+        "tagged": tagged, "category": category, "web": WEB,
         "commits": [{"sha": SHA_B, "date": "2026-10-01", "subject": "Fix <thing>",
                      "significant": True}],
     }
@@ -119,6 +124,15 @@ def test_defaults_tick_everything_but_major_bumps():
     assert names == ["Minor"]
     assert pin_updates.body_yaml_file(body) == "1.43.yaml"
     assert "Fix &lt;thing>" in body
+    assert f"[`bbbbbbb`]({WEB}/commit/{SHA_B[:12]}) Fix" in body
+    assert f"[compare]({WEB}/compare/{SHA_A[:12]}...{SHA_B[:12]})" in body
+
+
+def test_truncated_commit_lists_link_to_the_full_comparison():
+    c = candidate("Busy", "release")
+    c["commits"] *= 12
+    body = pin_updates.render_body("1.43.yaml", [c], [], "1.43.11", SHA_C)
+    assert f"[… and 2 more]({WEB}/compare/{SHA_A[:12]}...{SHA_B[:12]})" in body
 
 
 def test_previous_ticks_are_kept_for_the_same_revision():

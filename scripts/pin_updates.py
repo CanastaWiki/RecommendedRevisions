@@ -40,7 +40,7 @@ USER_AGENT = "RecommendedRevisions-pin-updates (https://github.com/CanastaWiki/R
 MW_CORE_REPO = "https://gerrit.wikimedia.org/r/mediawiki/core"
 
 # GitHub caps issue bodies at 65,536 characters.
-MAX_BODY_CHARS = 60000
+MAX_BODY_CHARS = 64000
 
 SECTIONS = [
     ("maintenance", "Maintenance branch updates", True),
@@ -154,13 +154,14 @@ def is_major_bump(old: str | None, new: str | None) -> bool:
     return b[0] > a[0]
 
 
-def compare_url(entry: dict, old: str, new: str) -> str | None:
+def web_url(entry: dict) -> str | None:
+    """GitHub page for the repository; Gerrit repositories use their GitHub mirror."""
     repo = entry["repository"]
     if repo.startswith("https://gerrit.wikimedia.org/r/mediawiki/"):
         kind = "extensions" if entry["kind"] == "extension" else "skins"
-        return f"https://github.com/wikimedia/mediawiki-{kind}-{entry['name']}/compare/{old}...{new}"
+        return f"https://github.com/wikimedia/mediawiki-{kind}-{entry['name']}"
     if repo.startswith("https://github.com/"):
-        return f"{repo.removesuffix('.git').rstrip('/')}/compare/{old}...{new}"
+        return repo.removesuffix(".git").rstrip("/")
     return None
 
 
@@ -337,7 +338,7 @@ def scan_entry(entry: dict, cache: str, mw_version: str, mw_release: str,
         "new_version": new_version,
         "tagged": bool(tag),
         "category": category,
-        "compare": compare_url(entry, pin, target),
+        "web": web_url(entry),
         "commits": commits,
     }
 
@@ -381,6 +382,11 @@ def _short(sha: str) -> str:
     return sha[:7]
 
 
+def _abbrev(sha: str) -> str:
+    """Abbreviation for URLs; long enough to stay unambiguous."""
+    return sha[:12]
+
+
 def _entry_lines(c: dict, checked: bool, max_commits: int) -> list[str]:
     significant = [x for x in c["commits"] if x["significant"]]
     if c["tagged"]:
@@ -389,7 +395,9 @@ def _entry_lines(c: dict, checked: bool, max_commits: int) -> list[str]:
         change = f"`{_short(c['old'])}` → `{_short(c['new'])}`"
         if c["new_version"] and c["new_version"] != c["old_version"]:
             change += f" (version {c['old_version'] or '?'} → {c['new_version']})"
-    link = f" · [compare]({c['compare']})" if c["compare"] else ""
+    web = c["web"]
+    compare = f"{web}/compare/{_abbrev(c['old'])}...{_abbrev(c['new'])}" if web else None
+    link = f" · [compare]({compare})" if compare else ""
     marker = json.dumps({"kind": c["kind"], "name": c["name"], "commit": c["new"],
                          "version": c["new_version"] if c["tagged"] else None,
                          "declared": c["new_version"]},
@@ -405,9 +413,12 @@ def _entry_lines(c: dict, checked: bool, max_commits: int) -> list[str]:
             subject = x["subject"].replace("<", "&lt;")
             if len(subject) > 90:
                 subject = subject[:87] + "..."
-            lines.append(f"  - {x['date']} {subject}")
+            sha = f"[`{_short(x['sha'])}`]({web}/commit/{_abbrev(x['sha'])})" if web \
+                else f"`{_short(x['sha'])}`"
+            lines.append(f"  - {x['date']} {sha} {subject}")
         if len(significant) > max_commits:
-            lines.append(f"  - … and {len(significant) - max_commits} more")
+            more = f"… and {len(significant) - max_commits} more"
+            lines.append(f"  - [{more}]({compare})" if compare else f"  - {more}")
         lines += ["", "  </details>"]
     return lines
 
@@ -420,7 +431,7 @@ def render_body(yaml_file: str, candidates: list[dict], errors: list[str],
     order = {key: i for i, (key, _, _) in enumerate(SECTIONS)}
     candidates = sorted(candidates, key=lambda c: (order[c["category"]], c["name"].lower()))
 
-    for max_commits in (10, 6, 3, 0):
+    for max_commits in (10, 8, 6, 5, 4, 3, 2, 1, 0):
         lines = [
             FILE_MARKER.format(yaml_file),
             f"Pinned revisions in `{yaml_file}` with significant changes, scanned {today} "
