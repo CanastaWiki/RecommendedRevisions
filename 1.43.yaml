@@ -12,7 +12,7 @@ extensions:
 - AdminLinks:
     Wikidata ID: Q21676187
     branch: master
-    commit: 92f1e05e2458368ad7a8477b2d84acfc99c36026 # v. 0.7.1
+    commit: 8807743a506ce4cdb5e94f67bff1d65ae23f3594 # v. 0.7.3
 - AdvancedSearch:
     Wikidata ID: Q21676196
     commit: 37a694b0de2086e2c5e1a4be3e26cf18c90c44f8
