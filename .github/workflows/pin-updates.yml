@@ -1,0 +1,151 @@
+name: Pin updates
+
+# Weekly: open or refresh one issue per YAML file listing pinned extensions
+# and skins whose tracked branch has significant new commits. Adding the
+# `apply-pin-updates` label to that issue opens a pull request that moves the
+# ticked pins.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: pin-updates
+  cancel-in-progress: false
+
+env:
+  # Pull requests opened with the default GITHUB_TOKEN do not trigger the CI
+  # workflow; a PIN_UPDATES_TOKEN secret (a PAT or app token) makes them do so.
+  GH_TOKEN: ${{ secrets.PIN_UPDATES_TOKEN || github.token }}
+
+jobs:
+  scan:
+    if: github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        yaml_file: ['1.43.yaml']
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Ensure labels exist
+        run: |
+          gh label create pin-updates --color 0e8a16 \
+            --description "Weekly list of available pin updates" --force
+          gh label create apply-pin-updates --color fbca04 \
+            --description "Open a pull request for the ticked pin updates" --force
+
+      - name: Find the open issue for this file
+        id: issue
+        env:
+          YAML_FILE: ${{ matrix.yaml_file }}
+        run: |
+          number=$(gh issue list --label pin-updates --state open --limit 50 \
+            --json number,body \
+            --jq "map(select(.body | contains(\"<!-- pin-updates-file: $YAML_FILE -->\"))) | .[0].number // empty")
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          if [ -n "$number" ]; then
+            gh issue view "$number" --json body --jq .body > previous.md
+          else
+            : > previous.md
+          fi
+
+      - name: Scan pinned revisions
+        env:
+          YAML_FILE: ${{ matrix.yaml_file }}
+        run: |
+          python scripts/pin_updates.py scan "$YAML_FILE" \
+            --previous previous.md --output body.md
+          cat body.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or update the issue
+        env:
+          YAML_FILE: ${{ matrix.yaml_file }}
+          NUMBER: ${{ steps.issue.outputs.number }}
+        run: |
+          if [ -n "$NUMBER" ]; then
+            gh issue edit "$NUMBER" --body-file body.md
+          else
+            gh issue create --title "Pin updates: $YAML_FILE" \
+              --label pin-updates --body-file body.md
+          fi
+
+  apply:
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.label.name == 'apply-pin-updates' &&
+      contains(github.event.issue.labels.*.name, 'pin-updates')
+    runs-on: ubuntu-latest
+    env:
+      NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PIN_UPDATES_TOKEN || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Apply ticked updates
+        id: apply
+        run: |
+          gh issue view "$NUMBER" --json body --jq .body > body.md
+          yaml_file=$(sed -n 's/^<!-- pin-updates-file: \([0-9.]*\.yaml\) -->$/\1/p' body.md)
+          if [ -z "$yaml_file" ]; then
+            echo "::error::Issue #$NUMBER does not name a YAML file"
+            exit 1
+          fi
+          python scripts/pin_updates.py apply "$yaml_file" \
+            --body body.md --summary summary.md
+          echo "yaml_file=$yaml_file" >> "$GITHUB_OUTPUT"
+
+      - name: Open a pull request
+        env:
+          YAML_FILE: ${{ steps.apply.outputs.yaml_file }}
+        run: |
+          if git diff --quiet; then
+            gh issue comment "$NUMBER" --body "No ticked updates to apply."
+          else
+            branch="pin-updates/${YAML_FILE%.yaml}-$(date -u +%Y-%m-%d)-${GITHUB_RUN_ID}"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git switch -c "$branch"
+            git commit -q -am "Update pins in $YAML_FILE"
+            git push -q origin "$branch"
+            {
+              echo "Applies the ticked updates from #$NUMBER."
+              echo
+              cat summary.md
+            } > pr.md
+            url=$(gh pr create --title "Update pins in $YAML_FILE" \
+              --body-file pr.md --head "$branch")
+            gh issue comment "$NUMBER" --body "Opened $url"
+          fi
+
+      - name: Remove the trigger label
+        if: always()
+        run: gh issue edit "$NUMBER" --remove-label apply-pin-updates
