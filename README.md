@@ -73,7 +73,7 @@ Curated groups of extensions tested together are defined in `.ci/coexistence_gro
 
 ## Weekly Pin Updates
 
-The `Pin updates` workflow runs every Monday (and on demand from the Actions tab). For each YAML file it scans, it clones every pinned repository and looks for significant commits between the pinned commit and the tracked branch. Translation updates, test and CI changes, linting fixes and other housekeeping commits are ignored. Results go into one issue per YAML file, labeled `pin-updates`, which the next scan refreshes.
+The `Pin updates` workflow runs every Monday (and on demand from the Actions tab). For each YAML file it scans, it clones every pinned repository and looks for significant commits between the pinned commit and the tracked branch. Translation updates, test and CI changes, linting fixes and other housekeeping commits are ignored. When it finds any, it opens one issue per YAML file, labeled `pin-updates`, and later scans refresh that issue in place. When a scan finds none, it closes the open issue; the next update found opens a new one.
 
 The offered revision depends on the branch:
 
