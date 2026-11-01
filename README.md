@@ -68,3 +68,26 @@ The skip list (`.ci/skip_list.yaml`) is organized into two categories:
 #### 5. Co-existence Groups
 
 Curated groups of extensions tested together are defined in `.ci/coexistence_groups.yaml`. Add groups for common co-deployment scenarios to catch interaction bugs without the everything-enabled fragility.
+
+---
+
+## Weekly Pin Updates
+
+The `Pin updates` workflow runs every Monday (and on demand from the Actions tab). For each YAML file it scans, it clones every pinned repository and looks for significant commits between the pinned commit and the tracked branch. Translation updates, test and CI changes, linting fixes and other housekeeping commits are ignored. Results go into one issue per YAML file, labeled `pin-updates`, which the next scan refreshes.
+
+The offered revision depends on the branch:
+
+- **`REL1_xx` branches** — the branch head, ticked by default.
+- **Other branches with newer release tags** — the newest stable tag, ticked by default unless its major version is higher than the pinned one.
+- **Other branches without newer tags** — the branch head, ticked by default unless its declared major version is higher.
+
+A revision is offered only when its `extension.json` or `skin.json` accepts the latest MediaWiki release for the file's branch. When the branch head requires a newer MediaWiki, the newest earlier revision that does not is offered instead.
+
+To apply updates, tick the entries to take and add the `apply-pin-updates` label to the issue. The workflow opens a pull request that moves those pins and updates their `# v.` comments. Ticks survive the weekly refresh as long as the offered revision does not change.
+
+Pull requests opened with the default `GITHUB_TOKEN` do not trigger the CI workflow. Set a `PIN_UPDATES_TOKEN` repository secret (a fine-grained token with contents, issues and pull-request write access) to have CI run on them; otherwise close and reopen the pull request to start CI.
+
+To preview the issue locally:
+```bash
+python3 scripts/pin_updates.py scan 1.43.yaml --output body.md
+```
