@@ -73,8 +73,10 @@ jobs:
           YAML_FILE: ${{ matrix.yaml_file }}
         run: |
           python scripts/pin_updates.py scan "$YAML_FILE" \
-            --previous previous.md --output body.md
-          cat body.md >> "$GITHUB_STEP_SUMMARY"
+            --previous previous.md --output body.md \
+            --details-output details.md \
+            --details-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          cat details.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Open, update or close the issue
         env:

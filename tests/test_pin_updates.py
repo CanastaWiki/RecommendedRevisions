@@ -128,11 +128,32 @@ def test_defaults_tick_everything_but_major_bumps():
     assert f"[compare]({WEB}/compare/{SHA_A[:12]}...{SHA_B[:12]})" in body
 
 
-def test_truncated_commit_lists_link_to_the_full_comparison():
+def test_truncated_commit_lists_link_to_the_details_page():
+    c = candidate("Busy", "release")
+    c["commits"] *= 12
+    run = "https://github.com/o/r/actions/runs/1"
+    body = pin_updates.render_body("1.43.yaml", [c], [], "1.43.11", SHA_C, details_url=run)
+    assert f"[… and 2 more]({run})" in body
+
+
+def test_truncated_commit_lists_fall_back_to_the_comparison():
     c = candidate("Busy", "release")
     c["commits"] *= 12
     body = pin_updates.render_body("1.43.yaml", [c], [], "1.43.11", SHA_C)
     assert f"[… and 2 more]({WEB}/compare/{SHA_A[:12]}...{SHA_B[:12]})" in body
+
+
+def test_details_list_every_significant_commit_without_checkboxes():
+    c = candidate("Busy", "release")
+    noise = {"sha": SHA_C, "date": "2026-10-02", "subject": "Translations",
+             "significant": False}
+    c["commits"] = c["commits"] * 30 + [noise]
+    details = pin_updates.render_details("1.43.yaml", [c], "1.43.11", SHA_C)
+    assert details.count(f"/commit/{SHA_B[:12]}") == 30
+    assert "Translations" not in details
+    assert "- [" not in details.replace("- [`", "")
+    assert "<!-- pin" not in details
+    assert pin_updates.ticked(details) == []
 
 
 def test_previous_ticks_are_kept_for_the_same_revision():
