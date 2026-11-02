@@ -134,6 +134,8 @@ def test_truncated_commit_lists_link_to_the_details_page():
     run = "https://github.com/o/r/actions/runs/1"
     body = pin_updates.render_body("1.43.yaml", [c], [], "1.43.11", SHA_C, details_url=run)
     assert f"[… and 2 more]({run})" in body
+    assert f"[summary page of the scan that wrote this issue]({run})" in body
+    assert "up to 10 significant commits" in body
 
 
 def test_truncated_commit_lists_fall_back_to_the_comparison():

@@ -483,6 +483,14 @@ def render_body(yaml_file: str, candidates: list[dict], errors: list[str],
             "pull request. Ticks are kept when the weekly scan refreshes this issue, "
             "unless the offered revision changes.",
         ]
+        if details_url:
+            lines += [
+                "",
+                f"Each entry below lists up to {max_commits} significant commits. For the "
+                f"full list of significant commits for every entry, open the "
+                f"[summary page of the scan that wrote this issue]({details_url}). That page "
+                "is for reading only; make your choices here.",
+            ]
         for key, title, default in SECTIONS:
             section = [c for c in candidates if c["category"] == key]
             if not section:
