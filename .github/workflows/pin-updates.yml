@@ -73,19 +73,29 @@ jobs:
           YAML_FILE: ${{ matrix.yaml_file }}
         run: |
           python scripts/pin_updates.py scan "$YAML_FILE" \
-            --previous previous.md --output body.md
-          cat body.md >> "$GITHUB_STEP_SUMMARY"
+            --previous previous.md --output body.md \
+            --details-output details.md \
+            --details-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          cat details.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create or update the issue
+      - name: Open, update or close the issue
         env:
           YAML_FILE: ${{ matrix.yaml_file }}
           NUMBER: ${{ steps.issue.outputs.number }}
         run: |
-          if [ -n "$NUMBER" ]; then
-            gh issue edit "$NUMBER" --body-file body.md
-          else
-            gh issue create --title "Pin updates: $YAML_FILE" \
-              --label pin-updates --body-file body.md
+          # Only open issues are adopted, so a closed one stays as the record of
+          # its cycle and the next pending update opens a fresh issue.
+          candidates=$(grep -c '<!-- pin {' body.md || true)
+          if (( candidates > 0 )); then
+            if [ -n "$NUMBER" ]; then
+              gh issue edit "$NUMBER" --body-file body.md
+            else
+              gh issue create --title "Pin updates: $YAML_FILE" \
+                --label pin-updates --body-file body.md
+            fi
+          elif [ -n "$NUMBER" ]; then
+            gh issue close "$NUMBER" \
+              --comment "The latest scan found no pins in $YAML_FILE with significant changes."
           fi
 
   apply:

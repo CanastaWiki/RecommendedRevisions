@@ -40,7 +40,7 @@ USER_AGENT = "RecommendedRevisions-pin-updates (https://github.com/CanastaWiki/R
 MW_CORE_REPO = "https://gerrit.wikimedia.org/r/mediawiki/core"
 
 # GitHub caps issue bodies at 65,536 characters.
-MAX_BODY_CHARS = 60000
+MAX_BODY_CHARS = 64000
 
 SECTIONS = [
     ("maintenance", "Maintenance branch updates", True),
@@ -154,13 +154,14 @@ def is_major_bump(old: str | None, new: str | None) -> bool:
     return b[0] > a[0]
 
 
-def compare_url(entry: dict, old: str, new: str) -> str | None:
+def web_url(entry: dict) -> str | None:
+    """GitHub page for the repository; Gerrit repositories use their GitHub mirror."""
     repo = entry["repository"]
     if repo.startswith("https://gerrit.wikimedia.org/r/mediawiki/"):
         kind = "extensions" if entry["kind"] == "extension" else "skins"
-        return f"https://github.com/wikimedia/mediawiki-{kind}-{entry['name']}/compare/{old}...{new}"
+        return f"https://github.com/wikimedia/mediawiki-{kind}-{entry['name']}"
     if repo.startswith("https://github.com/"):
-        return f"{repo.removesuffix('.git').rstrip('/')}/compare/{old}...{new}"
+        return repo.removesuffix(".git").rstrip("/")
     return None
 
 
@@ -337,7 +338,7 @@ def scan_entry(entry: dict, cache: str, mw_version: str, mw_release: str,
         "new_version": new_version,
         "tagged": bool(tag),
         "category": category,
-        "compare": compare_url(entry, pin, target),
+        "web": web_url(entry),
         "commits": commits,
     }
 
@@ -381,46 +382,97 @@ def _short(sha: str) -> str:
     return sha[:7]
 
 
-def _entry_lines(c: dict, checked: bool, max_commits: int) -> list[str]:
-    significant = [x for x in c["commits"] if x["significant"]]
+def _abbrev(sha: str) -> str:
+    """Abbreviation for URLs; long enough to stay unambiguous."""
+    return sha[:12]
+
+
+def _change(c: dict) -> str:
     if c["tagged"]:
-        change = f"{c['old_version'] or _short(c['old'])} → {c['new_version']}"
-    else:
-        change = f"`{_short(c['old'])}` → `{_short(c['new'])}`"
-        if c["new_version"] and c["new_version"] != c["old_version"]:
-            change += f" (version {c['old_version'] or '?'} → {c['new_version']})"
-    link = f" · [compare]({c['compare']})" if c["compare"] else ""
+        return f"{c['old_version'] or _short(c['old'])} → {c['new_version']}"
+    change = f"`{_short(c['old'])}` → `{_short(c['new'])}`"
+    if c["new_version"] and c["new_version"] != c["old_version"]:
+        change += f" (version {c['old_version'] or '?'} → {c['new_version']})"
+    return change
+
+
+def _compare(c: dict) -> str | None:
+    web = c["web"]
+    return f"{web}/compare/{_abbrev(c['old'])}...{_abbrev(c['new'])}" if web else None
+
+
+def _commit_line(c: dict, x: dict, indent: str) -> str:
+    subject = x["subject"].replace("<", "&lt;")
+    if len(subject) > 90:
+        subject = subject[:87] + "..."
+    web = c["web"]
+    sha = f"[`{_short(x['sha'])}`]({web}/commit/{_abbrev(x['sha'])})" if web \
+        else f"`{_short(x['sha'])}`"
+    return f"{indent}- {x['date']} {sha} {subject}"
+
+
+def _summary(c: dict) -> str:
+    significant = sum(1 for x in c["commits"] if x["significant"])
+    compare = _compare(c)
+    link = f" · [compare]({compare})" if compare else ""
+    return (f"**{c['name']}** ({c['kind']}, `{c['branch']}`) {_change(c)} · "
+            f"{significant} significant of {len(c['commits'])} commits{link}")
+
+
+def _entry_lines(c: dict, checked: bool, max_commits: int,
+                 details_url: str | None = None) -> list[str]:
+    significant = [x for x in c["commits"] if x["significant"]]
     marker = json.dumps({"kind": c["kind"], "name": c["name"], "commit": c["new"],
                          "version": c["new_version"] if c["tagged"] else None,
                          "declared": c["new_version"]},
                         separators=(",", ":"))
-    lines = [
-        f"- [{'x' if checked else ' '}] **{c['name']}** ({c['kind']}, `{c['branch']}`) "
-        f"{change} · {len(significant)} significant of {len(c['commits'])} commits"
-        f"{link} <!-- pin {marker} -->"
-    ]
+    lines = [f"- [{'x' if checked else ' '}] {_summary(c)} <!-- pin {marker} -->"]
     if max_commits:
         lines += ["  <details><summary>Significant commits</summary>", ""]
-        for x in significant[:max_commits]:
-            subject = x["subject"].replace("<", "&lt;")
-            if len(subject) > 90:
-                subject = subject[:87] + "..."
-            lines.append(f"  - {x['date']} {subject}")
+        lines += [_commit_line(c, x, "  ") for x in significant[:max_commits]]
         if len(significant) > max_commits:
-            lines.append(f"  - … and {len(significant) - max_commits} more")
+            more = f"… and {len(significant) - max_commits} more"
+            target = details_url or _compare(c)
+            lines.append(f"  - [{more}]({target})" if target else f"  - {more}")
         lines += ["", "  </details>"]
     return lines
 
 
+def _sorted(candidates: list[dict]) -> list[dict]:
+    order = {key: i for i, (key, _, _) in enumerate(SECTIONS)}
+    return sorted(candidates, key=lambda c: (order[c["category"]], c["name"].lower()))
+
+
+def render_details(yaml_file: str, candidates: list[dict], mw_release: str,
+                   source_sha: str, today: str | None = None) -> str:
+    """Every significant commit for every candidate, without checkboxes."""
+    today = today or datetime.date.today().isoformat()
+    candidates = _sorted(candidates)
+    lines = [
+        f"## Significant commits for `{yaml_file}`",
+        "",
+        f"Scanned {today} against {source_sha[:7]} for MediaWiki {mw_release}. "
+        "Choose updates in the pin updates issue; this page is for reading only.",
+    ]
+    for key, title, _ in SECTIONS:
+        section = [c for c in candidates if c["category"] == key]
+        if not section:
+            continue
+        lines += ["", f"### {title} ({len(section)})"]
+        for c in section:
+            lines += ["", _summary(c), ""]
+            lines += [_commit_line(c, x, "") for x in c["commits"] if x["significant"]]
+    return "\n".join(lines) + "\n"
+
+
 def render_body(yaml_file: str, candidates: list[dict], errors: list[str],
                 mw_release: str, source_sha: str, previous: str = "",
-                today: str | None = None) -> str:
+                today: str | None = None, details_url: str | None = None) -> str:
     today = today or datetime.date.today().isoformat()
     ticks = previous_ticks(previous)
-    order = {key: i for i, (key, _, _) in enumerate(SECTIONS)}
-    candidates = sorted(candidates, key=lambda c: (order[c["category"]], c["name"].lower()))
+    candidates = _sorted(candidates)
 
-    for max_commits in (10, 6, 3, 0):
+    for max_commits in (10, 8, 6, 5, 4, 3, 2, 1, 0):
         lines = [
             FILE_MARKER.format(yaml_file),
             f"Pinned revisions in `{yaml_file}` with significant changes, scanned {today} "
@@ -431,6 +483,14 @@ def render_body(yaml_file: str, candidates: list[dict], errors: list[str],
             "pull request. Ticks are kept when the weekly scan refreshes this issue, "
             "unless the offered revision changes.",
         ]
+        if details_url:
+            lines += [
+                "",
+                f"Each entry below lists up to {max_commits} significant commits. For the "
+                f"full list of significant commits for every entry, open the "
+                f"[summary page of the scan that wrote this issue]({details_url}). That page "
+                "is for reading only; make your choices here.",
+            ]
         for key, title, default in SECTIONS:
             section = [c for c in candidates if c["category"] == key]
             if not section:
@@ -438,7 +498,7 @@ def render_body(yaml_file: str, candidates: list[dict], errors: list[str],
             lines += ["", f"### {title} ({len(section)})", ""]
             for c in section:
                 checked = ticks.get((c["kind"], c["name"], c["new"]), default)
-                lines += _entry_lines(c, checked, max_commits)
+                lines += _entry_lines(c, checked, max_commits, details_url)
         if not candidates:
             lines += ["", "No pins have significant changes."]
         if errors:
@@ -507,6 +567,10 @@ def main() -> int:
     p_scan.add_argument("--output", required=True)
     p_scan.add_argument("--previous", help="Current issue body, to keep ticks")
     p_scan.add_argument("--cache", help="Clone cache directory (default: a temp dir)")
+    p_scan.add_argument("--details-output",
+                        help="Also write every significant commit, without checkboxes, here")
+    p_scan.add_argument("--details-url",
+                        help="Where the details are published; long lists in the issue link here")
 
     p_apply = sub.add_parser("apply", help="Apply ticked updates from an issue body")
     p_apply.add_argument("yaml_file")
@@ -521,10 +585,14 @@ def main() -> int:
         previous = open(args.previous).read() if args.previous else ""
         source = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
                                 text=True).stdout.strip() or "unknown"
-        body = render_body(os.path.basename(args.yaml_file), candidates, errors,
-                           mw_release, source, previous)
+        yaml_file = os.path.basename(args.yaml_file)
+        body = render_body(yaml_file, candidates, errors, mw_release, source, previous,
+                           details_url=args.details_url)
         with open(args.output, "w") as f:
             f.write(body)
+        if args.details_output:
+            with open(args.details_output, "w") as f:
+                f.write(render_details(yaml_file, candidates, mw_release, source))
         print(f"{len(candidates)} candidates, {len(errors)} errors")
         return 0
 
