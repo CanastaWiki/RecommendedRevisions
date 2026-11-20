@@ -28,6 +28,12 @@ on:
         required: false
         default: ''
 
+env:
+  # Debian release the extension tests run on. Keep it in step with the base
+  # image in CanastaBase's Dockerfile (Debian 12 ships PHP 8.2; Debian 13
+  # ships PHP 8.4).
+  DEBIAN_VERSION: '12'
+
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
   # Job 1: Parse YAML, validate commits, determine matrices.
@@ -42,6 +48,7 @@ jobs:
       matrix: ${{ steps.parse.outputs.matrix }}
       coexistence_matrix: ${{ steps.coexistence.outputs.matrix }}
       yaml_file: ${{ steps.detect.outputs.yaml_file }}
+      container_image: ${{ steps.detect.outputs.container_image }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -71,6 +78,9 @@ jobs:
           fi
           echo "yaml_file=${YAML_FILE}" >> "$GITHUB_OUTPUT"
           echo "Using YAML file: ${YAML_FILE}"
+          # A job's container: cannot read the env context, so pass the
+          # image to the test jobs as an output.
+          echo "container_image=debian:${DEBIAN_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Validate YAML structure
         run: |
@@ -121,6 +131,11 @@ jobs:
       matrix:
         batch: ${{ fromJson(needs.parse.outputs.matrix) }}
 
+    # Run on the same Debian and PHP that CanastaBase uses in production,
+    # not on whatever PHP GitHub's runner image happens to ship.
+    container:
+      image: ${{ needs.parse.outputs.container_image }}
+
     services:
       db:
         image: mariadb:10.6
@@ -129,8 +144,6 @@ jobs:
           MYSQL_DATABASE: mediawiki
           MYSQL_USER: wiki
           MYSQL_PASSWORD: wiki_password
-        ports:
-          - 3306:3306
         options: >-
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
           --health-interval=5s
@@ -139,31 +152,29 @@ jobs:
 
     env:
       MW_VERSION: ${{ github.event.inputs.mw_version || '1.43' }}
-      MW_DB_SERVER: 127.0.0.1
+      # Inside a container job, the service is reached by its name.
+      MW_DB_SERVER: db
       MW_DB_NAME: mediawiki
       MW_DB_USER: wiki
       MW_DB_PASS: wiki_password
+      COMPOSER_ALLOW_SUPERUSER: '1'
+      COMPOSER_CACHE_DIR: /tmp/composer-cache
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install Python dependencies
-        run: pip install -r scripts/requirements.txt
+      - name: Set up PHP, Composer and Python
+        uses: ./.github/actions/setup-canasta-php
 
       - name: Cache Composer packages
         uses: actions/cache@v4
         with:
-          path: ~/.composer/cache
-          key: composer-${{ env.MW_VERSION }}-${{ matrix.batch }}-${{ hashFiles('*.yaml') }}
+          path: /tmp/composer-cache
+          key: composer-debian${{ env.DEBIAN_VERSION }}-${{ env.MW_VERSION }}-${{ matrix.batch }}-${{ hashFiles('*.yaml') }}
           restore-keys: |
-            composer-${{ env.MW_VERSION }}-${{ matrix.batch }}-
-            composer-${{ env.MW_VERSION }}-
+            composer-debian${{ env.DEBIAN_VERSION }}-${{ env.MW_VERSION }}-${{ matrix.batch }}-
+            composer-debian${{ env.DEBIAN_VERSION }}-${{ env.MW_VERSION }}-
 
       - name: Set up MediaWiki
         run: |
@@ -424,6 +435,11 @@ jobs:
       matrix:
         group: ${{ fromJson(needs.parse.outputs.coexistence_matrix) }}
 
+    # Run on the same Debian and PHP that CanastaBase uses in production,
+    # not on whatever PHP GitHub's runner image happens to ship.
+    container:
+      image: ${{ needs.parse.outputs.container_image }}
+
     services:
       db:
         image: mariadb:10.6
@@ -432,8 +448,6 @@ jobs:
           MYSQL_DATABASE: mediawiki
           MYSQL_USER: wiki
           MYSQL_PASSWORD: wiki_password
-        ports:
-          - 3306:3306
         options: >-
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
           --health-interval=5s
@@ -442,22 +456,20 @@ jobs:
 
     env:
       MW_VERSION: ${{ github.event.inputs.mw_version || '1.43' }}
-      MW_DB_SERVER: 127.0.0.1
+      # Inside a container job, the service is reached by its name.
+      MW_DB_SERVER: db
       MW_DB_NAME: mediawiki
       MW_DB_USER: wiki
       MW_DB_PASS: wiki_password
+      COMPOSER_ALLOW_SUPERUSER: '1'
+      COMPOSER_CACHE_DIR: /tmp/composer-cache
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install Python dependencies
-        run: pip install -r scripts/requirements.txt
+      - name: Set up PHP, Composer and Python
+        uses: ./.github/actions/setup-canasta-php
 
       - name: Set up MediaWiki
         run: |
