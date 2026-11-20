@@ -211,8 +211,8 @@ jobs:
             "RecommendedRevisions CI" "Admin"
 
           # Save the base LocalSettings for isolated test runs.
-          cp "${{ github.workspace }}/.ci/LocalSettings.ci.php" "${MW_DIR}/LocalSettings.base.php"
-          cp "${{ github.workspace }}/.ci/LocalSettings.ci.php" "${MW_DIR}/LocalSettings.php"
+          cp "${GITHUB_WORKSPACE}/.ci/LocalSettings.ci.php" "${MW_DIR}/LocalSettings.base.php"
+          cp "${GITHUB_WORKSPACE}/.ci/LocalSettings.ci.php" "${MW_DIR}/LocalSettings.php"
 
           # Verify MW is working.
           ls -la "${MW_DIR}/LocalSettings.php"
@@ -230,7 +230,7 @@ jobs:
       - name: Install extensions/skins
         run: |
           cd "${MW_DIR}"
-          python3 - /tmp/manifest.json "${MW_DIR}" "${{ github.workspace }}/.ci/LocalSettings.ci.php" <<'INSTALL_SCRIPT'
+          python3 - /tmp/manifest.json "${MW_DIR}" "${GITHUB_WORKSPACE}/.ci/LocalSettings.ci.php" <<'INSTALL_SCRIPT'
           import json
           import os
           import subprocess
@@ -344,7 +344,7 @@ jobs:
           cd "${MW_DIR}"
           mkdir -p /tmp/test-results
 
-          python3 "${{ github.workspace }}/.ci/run_isolated_tests.py" \
+          python3 "${GITHUB_WORKSPACE}/.ci/run_isolated_tests.py" \
             /tmp/manifest.json \
             "${MW_DIR}" \
             "${MW_DIR}/LocalSettings.base.php" \
@@ -493,7 +493,7 @@ jobs:
             --pass=ci_admin_password \
             --scriptpath="" \
             "RecommendedRevisions CI" "Admin"
-          cp "${{ github.workspace }}/.ci/LocalSettings.ci.php" "${MW_DIR}/LocalSettings.php"
+          cp "${GITHUB_WORKSPACE}/.ci/LocalSettings.ci.php" "${MW_DIR}/LocalSettings.php"
 
       - name: Install & test co-existence group
         run: |
@@ -508,7 +508,7 @@ jobs:
 
           mw_dir = os.environ["MW_DIR"]
           group_name = "${{ matrix.group }}"
-          workspace = "${{ github.workspace }}"
+          workspace = os.environ["GITHUB_WORKSPACE"]
 
           # Load the co-existence group definition.
           with open(os.path.join(workspace, ".ci", "coexistence_groups.yaml")) as f:
