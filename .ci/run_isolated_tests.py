@@ -132,6 +132,39 @@ def run_db_update(mw_dir: str) -> bool:
         return False
 
 
+def build_exclude_filter(exclude_files: list[str]) -> str:
+    """
+    Build a PHPUnit --filter regex that leaves out the excluded test classes.
+
+    Each excluded file's basename (minus .php) is taken as its class name,
+    as MediaWiki test files are named.  PHPUnit 9 matches the filter against
+    "Fully\\Qualified\\Class::testMethod ...", so the negative lookahead
+    allows an optional namespace before the class name.
+    """
+    classes = sorted({os.path.splitext(os.path.basename(f))[0] for f in exclude_files})
+    return r"/^(?!(?:.*\\)?(?:" + "|".join(classes) + r")::)/"
+
+
+def build_phpunit_command(
+    phpunit_runner: str,
+    test_dir: str,
+    result_file: str,
+    exclude_files: list[str] | None = None,
+) -> list[str]:
+    """
+    Build the PHPUnit command for an extension's test directory.
+
+    MediaWiki 1.43's phpunit.php runs PHPUnit 9's TextUI\\Command, which
+    accepts a single test path, so the whole test directory is always
+    passed and excluded files are left out with a --filter regex.
+    """
+    cmd = ["php", phpunit_runner, "--log-junit", result_file]
+    if exclude_files:
+        cmd.extend(["--filter", build_exclude_filter(exclude_files)])
+    cmd.append(test_dir)
+    return cmd
+
+
 def run_phpunit(
     mw_dir: str,
     test_dir: str,
@@ -144,9 +177,7 @@ def run_phpunit(
 
     Args:
         exclude_files: Optional list of test file paths (relative to extension
-                       root) to exclude.  Since PHPUnit 9 has no --exclude-file
-                       flag, we enumerate the test files and omit the excluded
-                       ones, passing the remaining files individually.
+                       root) to exclude.  See build_phpunit_command.
 
     Returns a dict with status and details.
     """
@@ -155,33 +186,7 @@ def run_phpunit(
         return {"status": "error", "message": "No PHPUnit runner found"}
 
     try:
-        cmd = ["php", phpunit_runner, "--log-junit", result_file]
-
-        if exclude_files:
-            # Resolve excluded paths to absolute paths for comparison.
-            # test_dir is <mw_dir>/extensions/<Name>/tests/phpunit
-            # exclude paths are relative to <mw_dir>/extensions/<Name>/
-            ext_base = os.path.dirname(os.path.dirname(test_dir))
-            excluded_abs = set()
-            for ef in exclude_files:
-                abs_path = os.path.realpath(os.path.join(ext_base, ef))
-                excluded_abs.add(abs_path)
-
-            # Enumerate all test PHP files and filter out excluded ones.
-            test_files = []
-            for root, _dirs, files in os.walk(test_dir):
-                for f in sorted(files):
-                    if f.endswith("Test.php"):
-                        fpath = os.path.realpath(os.path.join(root, f))
-                        if fpath not in excluded_abs:
-                            test_files.append(fpath)
-
-            if not test_files:
-                return {"status": "no_tests", "message": "All test files excluded"}
-
-            cmd.extend(test_files)
-        else:
-            cmd.append(test_dir)
+        cmd = build_phpunit_command(phpunit_runner, test_dir, result_file, exclude_files)
 
         proc = subprocess.run(
             cmd,
