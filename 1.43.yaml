@@ -80,7 +80,7 @@ extensions:
     commit: ee7b17910ece1ebaf6ad53857926d797b0ff374d
 - CheckUser:
     Wikidata ID: Q21676386
-    commit: 78589958bffec94d89ecd887f97389ad2aee8af7
+    commit: 0f90a976619b1cab0496aaf3a9a8372de450874e
     additional steps:
     - composer update
     - database update
