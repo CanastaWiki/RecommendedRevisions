@@ -7,7 +7,7 @@
 #                        This bucket should shrink over time as services are wired up.
 #
 #   upstream_test_compat — The extension loads and registers fine, but its test suite
-#                          has known incompatibilities with MW 1.43 / PHP 8.3 / PHPUnit.
+#                          has known incompatibilities with MW 1.43 / CanastaBase PHP / PHPUnit.
 #                          These ARE validated (checkout, composer, load) but test
 #                          failures are surfaced as non-blocking warnings.
 #
@@ -61,7 +61,7 @@ external_services:
 #   ✅ composer install
 #   ✅ wfLoadExtension (with declared deps)
 #
-# But their test suites have known issues under MW 1.43 / PHP 8.3 that are
+# But their test suites have known issues under MW 1.43 / CanastaBase PHP that are
 # NOT recommendation-validity problems. Test failures are surfaced in a
 # separate non-blocking report section.
 
@@ -121,7 +121,7 @@ upstream_test_compat:
 
 # ── Extensions with partial test exclusions ──────────────────────────────────
 # These extensions pass the vast majority of their test suite. Only a few
-# specific test files fail due to MW 1.43 / PHP 8.3 incompatibilities.
+# specific test files fail due to MW 1.43 / CanastaBase PHP incompatibilities.
 # The listed test files are excluded; the rest of the suite runs normally
 # and counts as blocking validation.
 

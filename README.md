@@ -63,7 +63,7 @@ docker compose -f .ci/docker-compose.ci.yml down
 The skip list (`.ci/skip_list.yaml`) is organized into two categories:
 
 - **`external_services`** — Extensions requiring infrastructure not available in CI (Elasticsearch, LDAP, AWS, etc.). These skip all validation phases. This bucket should shrink over time as services are wired up.
-- **`upstream_test_compat`** — Extensions that load correctly but have test suite issues with MW 1.43 / PHP 8.3. These are still validated (checkout, composer, load) but test failures are non-blocking.
+- **`upstream_test_compat`** — Extensions that load correctly but have test suite issues with MW 1.43 on the PHP that CanastaBase ships. These are still validated (checkout, composer, load) but test failures are non-blocking.
 
 #### 5. Co-existence Groups
 
