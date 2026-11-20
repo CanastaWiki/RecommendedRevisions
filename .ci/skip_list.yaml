@@ -139,3 +139,7 @@ partial_test_compat:
     exclude_tests:
       - tests/phpunit/integration/includes/PFFormLinkerTest.php
       - tests/phpunit/integration/includes/PFHelperFormActionTest.php
+  - name: Scribunto
+    reason: SandboxInterpreterTest::testTimeLimit hits a MediaWiki 1.42 deprecation in the timeout path; runs only where php-luasandbox is installed
+    exclude_tests:
+      - tests/phpunit/Engines/LuaSandbox/SandboxInterpreterTest.php
