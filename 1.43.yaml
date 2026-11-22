@@ -495,7 +495,7 @@ extensions:
 - SemanticMediaWiki:
     Wikidata ID: Q20728
     repository: https://github.com/SemanticMediaWiki/SemanticMediaWiki
-    commit: 16171910b16165089d19fc6f66c414e6f62aa1eb # v. 6.0.0
+    commit: 448a112ac897ff6a4b615cf0703cf60ed946907f # v. 6.0.1
     additional steps:
     - composer update
     - database update
