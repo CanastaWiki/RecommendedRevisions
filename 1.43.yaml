@@ -185,7 +185,7 @@ extensions:
     - database update
 - EditAccount:
     Wikidata ID: Q21676224
-    commit: 19ef898ce9cecc34dfed190d2d8628bbeb863f89
+    commit: 80b83dcbef425d5090dff2bf19d1943a473954d5
 - Editcount:
     Wikidata ID: Q21676209
     commit: 84a4c08a26605ab8c89beb77d6f7bd6fc3e97ec6
@@ -351,7 +351,7 @@ extensions:
     commit: 8300e744a12476e42f34e4571b0d6613dc9929c7 # v. 1.4.1
 - MobileFrontend:
     Wikidata ID: Q21677641
-    commit: 52aa1f0d683d72935fc737b0e7bb0ea906289701
+    commit: b231970eb20985a3ddfbc80bd31b985f913a52a2
     required extensions:
     - MinervaNeue
 - MsUpload:
