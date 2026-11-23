@@ -80,7 +80,7 @@ extensions:
     commit: 7f419f87b8a45ded504b4a27b8e62594ce28ecbd
 - CheckUser:
     Wikidata ID: Q21676386
-    commit: 58b568e53c99abb043ece7454c84fe2d499c9c81
+    bundled: true
     additional steps:
     - composer update
     - database update
@@ -105,7 +105,7 @@ extensions:
     - WikiEditor
 - CodeMirror:
     Wikidata ID: Q21676540
-    commit: b7ec91841d5ffd36e88a1f69026243fa81978a2f
+    bundled: true
 - Collection:
     Wikidata ID: Q134413164
     commit: 68d3028a979248521dc01990bd5f416747f133cd
@@ -561,7 +561,7 @@ extensions:
     commit: 7b0f3389f54d8c4f88ba5dedf85632468d82722f
 - TemplateStyles:
     Wikidata ID: Q25916623
-    commit: 1a010f8c812d446572994a850e4f3843d26b4ef9
+    bundled: true
     additional steps:
     - composer update
 - TemplateStylesExtender:
