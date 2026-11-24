@@ -216,7 +216,7 @@ extensions:
 - ExternalData:
     Wikidata ID: Q21676576
     branch: master
-    commit: 33f353579dde7928dc2de024934363819ecff6f5 # v. 3.7.1
+    commit: 579dd1565a71afbb2fab3f003a60eaa1af673600 # v. 3.7.2
     additional steps:
     - database update
 - FlexDiagrams:
