@@ -21,7 +21,7 @@ extensions:
     commit: d064089066679d789cb513cf8accdc57b51b5278
 - AntiSpoof:
     Wikidata ID: Q21676294
-    commit: a010c2d53618aa99b8b8a32d9665de9000e53188
+    commit: c46f572c5a0d6222a27333195da67ed147ff0238
     additional steps:
     - composer update
     - database update
@@ -48,7 +48,7 @@ extensions:
     - database update
 - BetaFeatures:
     Wikidata ID: Q21676633
-    commit: b6d1cdf01dea38eabc69f55ae1d1ccb851080750
+    commit: 65d73cef7ca0ea5d366bf600742794ffd4880b55
     additional steps:
     - database update
 - Bootstrap:
@@ -216,7 +216,7 @@ extensions:
 - ExternalData:
     Wikidata ID: Q21676576
     branch: master
-    commit: 76e024a9cba18173f5e706e855ecc4cec1459b39 # v. 3.7.1
+    commit: 33f353579dde7928dc2de024934363819ecff6f5 # v. 3.7.1
     additional steps:
     - database update
 - FlexDiagrams:
@@ -380,7 +380,7 @@ extensions:
     - database update
 - OAuth:
     Wikidata ID: Q21677849
-    commit: 2deadfa73ad7897e7f3ac6965a5ccefa09c61f6d
+    commit: 47c0a6d205b2b7c259efbcb55db059d0f5d033ce
     additional steps:
     - composer update
 - OpenGraphMeta:
