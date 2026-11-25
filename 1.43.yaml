@@ -450,6 +450,7 @@ extensions:
 - RottenLinks:
     Wikidata ID: Q59088472
     repository: https://github.com/miraheze/RottenLinks
+    branch: main
     commit: a2019146ef7fad359ac0503bb885f651d90272cb # v. 2.1.0
     additional steps:
     - database update
