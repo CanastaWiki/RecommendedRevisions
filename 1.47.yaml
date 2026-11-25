@@ -113,6 +113,7 @@ extensions:
     Wikidata ID: Q25662100
     commit: 75f1d1ccd3acc0bb9c43070dc4d954573e6e7cf5
     additional steps:
+    - composer update
     - database update
 - CommonsMetadata:
     Wikidata ID: Q21676600
