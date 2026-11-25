@@ -37,7 +37,6 @@ extensions:
 - AWS:
     Wikidata ID: Q21676069
     repository: https://github.com/edwardspec/mediawiki-aws-s3
-    branch: master
     commit: 7bfe15debbb3c4247fd0b62a9cdbde94484ed7f2 # v. 0.14.0
     additional steps:
     - composer update
@@ -206,7 +205,6 @@ extensions:
 - EmbedVideo:
     Wikidata ID: Q123153544
     repository: https://github.com/StarCitizenWiki/mediawiki-extensions-EmbedVideo
-    branch: master
     commit: d0aa2a3245c1308362b2ce77df1f6bb3e2bf6579 # v. 4.2.0
 - EventLogging:
     Wikidata ID: Q21676443
@@ -321,7 +319,6 @@ extensions:
 - Maps:
     Wikidata ID: Q21677553
     repository: https://github.com/ProfessionalWiki/Maps
-    branch: 13.1.x
     commit: 27b87f461dfbb178b637da02101a127e323e8101 # v. 15.0.1
     additional steps:
     - composer update
