@@ -113,6 +113,7 @@ extensions:
     Wikidata ID: Q25662100
     commit: 75f1d1ccd3acc0bb9c43070dc4d954573e6e7cf5
     additional steps:
+    - composer update
     - database update
 - CommonsMetadata:
     Wikidata ID: Q21676600
@@ -398,7 +399,7 @@ extensions:
 - PageExchange:
     Wikidata ID: Q123116960
     branch: master
-    commit: eaca8502623f3d80354cbe56571840b215f5ab67 # v. 0.8
+    commit: ba2ed4e1df542bfabc137efbc6ba8b173a17df70 # v. 0.9.3
     additional steps:
     - database update
 - PageForms:
@@ -451,7 +452,8 @@ extensions:
 - RottenLinks:
     Wikidata ID: Q59088472
     repository: https://github.com/miraheze/RottenLinks
-    commit: d6cfbcb5320abc568868823a4f0c1723e13de6b1 # v. 2.2.0
+    branch: main
+    commit: e475e44838fc3994db68e39b743b1b31945f9a7e # v. 2.2.0
     additional steps:
     - database update
 - RSS:
@@ -674,7 +676,7 @@ extensions:
 - WSOAuth:
     Wikidata ID: Q117027185
     branch: master
-    commit: 602cd253753a726d404747f10cba631509a32904 # v. 9.0.1
+    commit: 53807414fea8bd978105c218ecd8cbaa97db48ff # v. 9.0.1
     additional steps:
     - composer update
     - database update
