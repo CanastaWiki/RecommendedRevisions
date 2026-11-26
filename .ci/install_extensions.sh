@@ -143,11 +143,13 @@ for entry in entries:
         elif step == "composer update":
             if os.path.isfile(os.path.join(target_dir, "composer.json")):
                 print(f"  COMPOSER  {name}")
-                subprocess.run(
+                result = subprocess.run(
                     ["composer", "update", "--no-interaction", "--no-progress",
                      "--prefer-dist", "--no-dev"],
-                    cwd=target_dir, capture_output=True, check=False,
+                    cwd=target_dir, capture_output=True, text=True, check=False,
                 )
+                if result.returncode != 0:
+                    print(f"    COMPOSER ERROR for {name}: {result.stderr.strip()}")
         elif step == "git submodule update":
             print(f"  SUBMODULE {name}")
             subprocess.run(
