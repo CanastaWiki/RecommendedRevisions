@@ -513,14 +513,12 @@ extensions:
     required extensions:
     - Scribunto
     - SemanticMediaWiki
-# SemanticWatchlist does not work on MediaWiki 1.47 yet; restore this entry
-# once a release includes the fix.
-# - SemanticWatchlist:
-#     Wikidata ID: Q21678523
-#     repository: https://github.com/SemanticMediaWiki/SemanticWatchlist
-#     commit: 67b2df20249f4c02103e6b8ecbd65ecc49780eb3 # v. 1.4.0-beta
-#     required extensions:
-#     - SemanticMediaWiki
+- SemanticWatchlist:
+    Wikidata ID: Q21678523
+    repository: https://github.com/SemanticMediaWiki/SemanticWatchlist
+    commit: debdf9891896ec52d462070e545e793cfd9cc7c0
+    required extensions:
+    - SemanticMediaWiki
 - SimpleBatchUpload:
     Wikidata ID: Q25816436
     repository: https://github.com/ProfessionalWiki/SimpleBatchUpload
